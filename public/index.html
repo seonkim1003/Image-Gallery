@@ -67,6 +67,29 @@
             cursor: not-allowed;
         }
 
+        .gallery-item-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .description-header {
+            background: white;
+            padding: 12px 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+            line-height: 1.4;
+            text-align: center;
+            word-wrap: break-word;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         .image-item {
             position: relative;
             aspect-ratio: 1;
@@ -558,28 +581,6 @@
             font-weight: 500;
         }
 
-        .description-display {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 12px;
-            max-width: 90%;
-            text-align: center;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            pointer-events: none;
-            display: none;
-        }
-
-        .image-item:hover .description-display {
-            opacity: 1;
-            display: block;
-        }
 
         .full-image-description {
             margin-top: 15px;
@@ -1148,13 +1149,16 @@
         }
 
         function filterGallery() {
-            const items = gallery.querySelectorAll('.image-item');
-            items.forEach(item => {
-                const itemCategory = item.dataset.category;
-                if (currentFilter === 'all' || itemCategory === currentFilter) {
-                    item.style.display = 'block';
-                } else {
-                    item.style.display = 'none';
+            const wrappers = gallery.querySelectorAll('.gallery-item-wrapper');
+            wrappers.forEach(wrapper => {
+                const imageItem = wrapper.querySelector('.image-item');
+                if (imageItem) {
+                    const itemCategory = imageItem.dataset.category;
+                    if (currentFilter === 'all' || itemCategory === currentFilter) {
+                        wrapper.style.display = 'block';
+                    } else {
+                        wrapper.style.display = 'none';
+                    }
                 }
             });
             updateEmptyState();
@@ -1363,6 +1367,19 @@
             const existingItem = gallery.querySelector(`[data-id="${imageId}"]`);
             if (existingItem) return;
 
+            // Create wrapper for description and image
+            const itemWrapper = document.createElement('div');
+            itemWrapper.className = 'gallery-item-wrapper';
+            itemWrapper.setAttribute('data-id', imageId);
+            
+            // Add description above image if it exists
+            if (description && description.trim()) {
+                const descriptionHeader = document.createElement('div');
+                descriptionHeader.className = 'description-header';
+                descriptionHeader.textContent = description;
+                itemWrapper.appendChild(descriptionHeader);
+            }
+
             const imageItem = document.createElement('div');
             imageItem.className = 'image-item';
             imageItem.setAttribute('data-id', imageId);
@@ -1418,14 +1435,6 @@
             dateBadge.className = 'date-badge';
             dateBadge.textContent = formatDate(uploadDate || new Date().toISOString());
             
-            const descriptionDisplay = document.createElement('div');
-            descriptionDisplay.className = 'description-display';
-            if (description) {
-                descriptionDisplay.textContent = description;
-            } else {
-                descriptionDisplay.style.display = 'none';
-            }
-            
             const downloadBtn = document.createElement('button');
             downloadBtn.className = 'download-btn';
             downloadBtn.innerHTML = `
@@ -1471,12 +1480,11 @@
             imageItem.appendChild(mediaElement);
             imageItem.appendChild(categoryBadge);
             imageItem.appendChild(dateBadge);
-            if (description) {
-                imageItem.appendChild(descriptionDisplay);
-            }
             imageItem.appendChild(downloadBtn);
             imageItem.appendChild(deleteBtn);
-            gallery.appendChild(imageItem);
+            
+            itemWrapper.appendChild(imageItem);
+            gallery.appendChild(itemWrapper);
             
             filterGallery();
         }
@@ -1518,7 +1526,13 @@
                     throw new Error('Delete failed');
                 }
 
-                imageItem.remove();
+                // Remove the wrapper (which contains both description and image)
+                const wrapper = imageItem.closest('.gallery-item-wrapper');
+                if (wrapper) {
+                    wrapper.remove();
+                } else {
+                    imageItem.remove();
+                }
                 filterGallery();
             } catch (error) {
                 showError('Failed to delete image: ' + error.message);
@@ -1539,7 +1553,13 @@
                     throw new Error('Delete failed');
                 }
 
-                imageItem.remove();
+                // Remove the wrapper (which contains both description and image)
+                const wrapper = imageItem.closest('.gallery-item-wrapper');
+                if (wrapper) {
+                    wrapper.remove();
+                } else {
+                    imageItem.remove();
+                }
                 filterGallery();
             } catch (error) {
                 showError('Failed to delete group: ' + error.message);
@@ -1619,10 +1639,10 @@
         }
 
         function updateEmptyState() {
-            const visibleItems = Array.from(gallery.querySelectorAll('.image-item'))
-                .filter(item => item.style.display !== 'none');
+            const visibleWrappers = Array.from(gallery.querySelectorAll('.gallery-item-wrapper'))
+                .filter(wrapper => wrapper.style.display !== 'none');
             
-            if (visibleItems.length === 0) {
+            if (visibleWrappers.length === 0) {
                 emptyState.style.display = 'block';
                 emptyState.textContent = currentFilter === 'all' 
                     ? 'No images yet. Click the + button to add some!'
