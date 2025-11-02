@@ -71,6 +71,19 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            cursor: move;
+            transition: opacity 0.2s ease;
+        }
+
+        .gallery-item-wrapper.dragging {
+            opacity: 0.5;
+        }
+
+        .gallery-item-wrapper.drag-over {
+            border: 2px dashed #667eea;
+            border-radius: 12px;
+            padding: 5px;
+            margin: -5px;
         }
 
         .description-header {
@@ -711,6 +724,18 @@
             cursor: pointer;
         }
 
+        .group-modal-item {
+            cursor: move;
+        }
+
+        .group-modal-item.dragging {
+            opacity: 0.5;
+        }
+
+        .group-modal-item.drag-over {
+            border: 3px solid #667eea;
+        }
+
         .group-info {
             position: fixed;
             bottom: 20px;
@@ -889,6 +914,16 @@
             setupGroupModal();
         });
 
+        function setupDragAndDropReordering(wrapper, groupId) {
+            wrapper.draggable = false; // Disable dragging the wrapper itself
+            
+            // Make the image item draggable for reordering within group modal
+            const imageItem = wrapper.querySelector('.image-item');
+            if (imageItem) {
+                imageItem.setAttribute('draggable', 'false'); // Prevent dragging image items
+            }
+        }
+
         function setupGroupModal() {
             closeGroupModal.addEventListener('click', () => {
                 hideGroupModal();
@@ -923,9 +958,13 @@
                     const titleImageId = data.files.find(f => f.isTitle)?.id || data.files[0]?.id || null;
                     currentTitleImageId = titleImageId;
                     
-                    data.files.forEach(file => {
+                    data.files.forEach((file, index) => {
                         const item = document.createElement('div');
                         item.className = 'group-modal-item';
+                        item.draggable = true;
+                        item.setAttribute('data-file-id', file.id);
+                        item.setAttribute('data-file-order', index);
+                        
                         if (file.id === titleImageId || (file.id === data.files[0]?.id && !titleImageId)) {
                             item.classList.add('selected-title');
                             
@@ -934,6 +973,39 @@
                             titleLabel.textContent = 'Title Image';
                             item.appendChild(titleLabel);
                         }
+                        
+                        // Drag handlers for reordering
+                        item.addEventListener('dragstart', (e) => {
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', file.id);
+                            item.classList.add('dragging');
+                        });
+                        
+                        item.addEventListener('dragend', () => {
+                            item.classList.remove('dragging');
+                            document.querySelectorAll('.group-modal-item').forEach(i => i.classList.remove('drag-over'));
+                        });
+                        
+                        item.addEventListener('dragover', (e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            item.classList.add('drag-over');
+                        });
+                        
+                        item.addEventListener('dragleave', () => {
+                            item.classList.remove('drag-over');
+                        });
+                        
+                        item.addEventListener('drop', async (e) => {
+                            e.preventDefault();
+                            item.classList.remove('drag-over');
+                            
+                            const draggedFileId = e.dataTransfer.getData('text/plain');
+                            if (draggedFileId && draggedFileId !== file.id) {
+                                await reorderGroupFiles(groupId, draggedFileId, file.id);
+                                showGroupModal(groupId, category, description, uploadDate);
+                            }
+                        });
                         
                         const mediaContainer = document.createElement('div');
                         mediaContainer.style.position = 'relative';
@@ -972,8 +1044,7 @@
                         setTitleBtn.textContent = 'Set as Title';
                         setTitleBtn.onclick = async (e) => {
                             e.stopPropagation();
-                            await setTitleImage(groupId, file.id);
-                            showGroupModal(groupId, category, description, uploadDate);
+                            await setTitleImage(groupId, file.id, file.url, category, description, uploadDate);
                         };
                         mediaContainer.appendChild(setTitleBtn);
                         
@@ -984,7 +1055,7 @@
                     groupInfo.innerHTML = `
                         <h3>Group (${data.files.length} ${data.files.length === 1 ? 'file' : 'files'})</h3>
                         <p>Category: ${category} | Uploaded: ${formatDate(uploadDate)}${description ? ` | ${description}` : ''}</p>
-                        <p style="font-size: 12px; margin-top: 5px; opacity: 0.8;">Click "Set as Title" on any image to make it the group thumbnail</p>
+                        <p style="font-size: 12px; margin-top: 5px; opacity: 0.8;">Drag images to reorder | Click "Set as Title" to change thumbnail</p>
                     `;
                 })
                 .catch(error => {
@@ -992,7 +1063,7 @@
                 });
         }
 
-        async function setTitleImage(groupId, titleImageId) {
+        async function setTitleImage(groupId, titleImageId, newImageUrl = null, category = null, description = null, uploadDate = null) {
             try {
                 const response = await fetch(`${API_BASE}/groups/${groupId}/title`, {
                     method: 'PUT',
@@ -1006,10 +1077,114 @@
                     throw new Error('Failed to update title image');
                 }
 
-                // Reload images to reflect the change
-                loadImages();
+                // Update the image immediately without page refresh
+                if (newImageUrl) {
+                    const galleryWrapper = gallery.querySelector(`[data-group-id="${groupId}"]`);
+                    if (galleryWrapper) {
+                        const imageItem = galleryWrapper.querySelector('.image-item');
+                        if (imageItem) {
+                            const mediaElement = imageItem.querySelector('img, video');
+                            if (mediaElement) {
+                                const isVideo = newImageUrl.match(/\.(mp4|webm|ogg|mov|avi)$/i);
+                                const currentIsVideo = mediaElement.tagName === 'VIDEO';
+                                
+                                if (isVideo && !currentIsVideo) {
+                                    // Replace image with video
+                                    const newVideo = document.createElement('video');
+                                    newVideo.src = newImageUrl;
+                                    newVideo.preload = 'metadata';
+                                    newVideo.muted = true;
+                                    newVideo.playsInline = true;
+                                    newVideo.style.cursor = 'pointer';
+                                    newVideo.style.width = '100%';
+                                    newVideo.style.height = '100%';
+                                    newVideo.style.objectFit = 'cover';
+                                    newVideo.onmouseenter = () => newVideo.play();
+                                    newVideo.onmouseleave = () => {
+                                        newVideo.pause();
+                                        newVideo.currentTime = 0;
+                                    };
+                                    newVideo.onclick = () => {
+                                        newVideo.controls = !newVideo.controls;
+                                    };
+                                    
+                                    // Add video indicator
+                                    const videoIndicator = imageItem.querySelector('.video-indicator');
+                                    if (!videoIndicator) {
+                                        const indicator = document.createElement('div');
+                                        indicator.className = 'video-indicator';
+                                        indicator.innerHTML = '▶';
+                                        imageItem.appendChild(indicator);
+                                    }
+                                    
+                                    mediaElement.parentNode.replaceChild(newVideo, mediaElement);
+                                } else if (!isVideo && currentIsVideo) {
+                                    // Replace video with image
+                                    const newImg = document.createElement('img');
+                                    newImg.src = newImageUrl;
+                                    newImg.alt = 'Gallery image';
+                                    newImg.style.cursor = 'pointer';
+                                    newImg.style.width = '100%';
+                                    newImg.style.height = '100%';
+                                    newImg.style.objectFit = 'cover';
+                                    
+                                    // Remove video indicator
+                                    const videoIndicator = imageItem.querySelector('.video-indicator');
+                                    if (videoIndicator) {
+                                        videoIndicator.remove();
+                                    }
+                                    
+                                    mediaElement.parentNode.replaceChild(newImg, mediaElement);
+                                } else {
+                                    // Same type, just update src
+                                    mediaElement.src = newImageUrl;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback: reload if we don't have the new URL
+                    loadImages();
+                }
             } catch (error) {
                 showError('Failed to set title image: ' + error.message);
+            }
+        }
+
+        async function reorderGroupFiles(groupId, draggedFileId, targetFileId) {
+            try {
+                // Get current group files
+                const response = await fetch(`${API_BASE}/groups/${groupId}`);
+                if (!response.ok) {
+                    throw new Error('Failed to load group');
+                }
+                
+                const data = await response.json();
+                const currentOrder = data.files.map(f => f.id);
+                
+                // Find indices
+                const draggedIndex = currentOrder.indexOf(draggedFileId);
+                const targetIndex = currentOrder.indexOf(targetFileId);
+                
+                if (draggedIndex === -1 || targetIndex === -1) {
+                    return;
+                }
+                
+                // Reorder array
+                const newOrder = [...currentOrder];
+                const [removed] = newOrder.splice(draggedIndex, 1);
+                newOrder.splice(targetIndex, 0, removed);
+                
+                // Update order on server
+                await fetch(`${API_BASE}/groups/${groupId}/order`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ fileOrder: newOrder })
+                });
+            } catch (error) {
+                showError('Failed to reorder files: ' + error.message);
             }
         }
 
@@ -1371,6 +1546,15 @@
             const itemWrapper = document.createElement('div');
             itemWrapper.className = 'gallery-item-wrapper';
             itemWrapper.setAttribute('data-id', imageId);
+            itemWrapper.setAttribute('draggable', isGroup ? 'false' : 'true'); // Only allow reordering groups, not individual items
+            if (isGroup) {
+                itemWrapper.setAttribute('data-group-id', groupId);
+            }
+            
+            // Add drag and drop handlers for group reordering
+            if (isGroup && groupId) {
+                setupDragAndDropReordering(itemWrapper, groupId);
+            }
             
             // Add description above image if it exists
             if (description && description.trim()) {

@@ -110,7 +110,8 @@ app.get('/api/images', (req, res) => {
                     id: file,
                     url: `/uploads/${file}`,
                     filename: file,
-                    type: fileMeta.type || 'image'
+                    type: fileMeta.type || 'image',
+                    order: fileMeta.order !== undefined ? fileMeta.order : 999
                 });
             } else {
                 // Individual file
@@ -129,6 +130,14 @@ app.get('/api/images', (req, res) => {
         
         // Find title image for each group
         Object.values(groups).forEach(group => {
+            // Sort files by order first
+            group.files.sort((a, b) => {
+                if (a.order !== b.order) {
+                    return a.order - b.order;
+                }
+                return a.id.localeCompare(b.id);
+            });
+            
             // Find title image ID from any file in the group
             let titleImageId = null;
             for (const file of group.files) {
@@ -139,7 +148,7 @@ app.get('/api/images', (req, res) => {
                 }
             }
             
-            // If no title image set, use first file
+            // If no title image set, use first file (after sorting by order)
             if (!titleImageId && group.files.length > 0) {
                 titleImageId = group.files[0].id;
             }
@@ -253,6 +262,18 @@ app.get('/api/groups/:groupId', (req, res) => {
             }
         }
         
+        // Sort files by order if available
+        groupFiles.sort((a, b) => {
+            const metaA = metadata[a.id];
+            const metaB = metadata[b.id];
+            const orderA = metaA?.order !== undefined ? metaA.order : 999;
+            const orderB = metaB?.order !== undefined ? metaB.order : 999;
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            return a.id.localeCompare(b.id);
+        });
+        
         // Mark which file is the title image
         const filesWithTitle = groupFiles.map(file => ({
             ...file,
@@ -310,6 +331,37 @@ app.put('/api/groups/:groupId/title', (req, res) => {
     }
 });
 
+// Update group file order
+app.put('/api/groups/:groupId/order', (req, res) => {
+    try {
+        const groupId = req.params.groupId;
+        const fileOrder = req.body.fileOrder; // Array of file IDs in order
+        
+        if (!Array.isArray(fileOrder)) {
+            return res.status(400).json({ error: 'File order must be an array' });
+        }
+        
+        const metadata = loadMetadata();
+        
+        // Update order for all files in the group
+        const files = fs.readdirSync(uploadsDir);
+        files.forEach(file => {
+            const meta = metadata[file];
+            if (meta?.groupId === groupId) {
+                const orderIndex = fileOrder.indexOf(file);
+                if (orderIndex !== -1) {
+                    meta.order = orderIndex;
+                }
+            }
+        });
+        
+        saveMetadata(metadata);
+        res.json({ message: 'Order updated successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update order' });
+    }
+});
+
 // Download group as zip
 app.get('/api/groups/:groupId/download', (req, res) => {
     try {
@@ -327,7 +379,8 @@ app.get('/api/groups/:groupId/download', (req, res) => {
                     groupFiles.push({
                         id: file,
                         path: path.join(uploadsDir, file),
-                        filename: file
+                        filename: file,
+                        order: fileMeta?.order !== undefined ? fileMeta.order : 999 // Default to end if no order
                     });
                 }
             }
@@ -336,6 +389,14 @@ app.get('/api/groups/:groupId/download', (req, res) => {
         if (groupFiles.length === 0) {
             return res.status(404).json({ error: 'Group not found' });
         }
+        
+        // Sort by order, then by original filename as fallback
+        groupFiles.sort((a, b) => {
+            if (a.order !== b.order) {
+                return a.order - b.order;
+            }
+            return a.filename.localeCompare(b.filename);
+        });
         
         // Get description for zip filename
         const firstFile = groupFiles[0];
@@ -348,8 +409,11 @@ app.get('/api/groups/:groupId/download', (req, res) => {
         const archive = archiver('zip', { zlib: { level: 9 } });
         archive.pipe(res);
         
-        groupFiles.forEach(file => {
-            archive.file(file.path, { name: file.filename });
+        // Add files with numbered names based on order
+        groupFiles.forEach((file, index) => {
+            const ext = path.extname(file.filename);
+            const numberedName = `${index + 1}${ext}`;
+            archive.file(file.path, { name: numberedName });
         });
         
         archive.finalize();
