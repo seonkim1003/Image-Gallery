@@ -18,6 +18,31 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// Metadata file to store image categories
+const metadataFile = path.join(__dirname, 'image-metadata.json');
+
+// Load metadata from file
+function loadMetadata() {
+    try {
+        if (fs.existsSync(metadataFile)) {
+            const data = fs.readFileSync(metadataFile, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('Error loading metadata:', error);
+    }
+    return {};
+}
+
+// Save metadata to file
+function saveMetadata(metadata) {
+    try {
+        fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2));
+    } catch (error) {
+        console.error('Error saving metadata:', error);
+    }
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -51,6 +76,7 @@ app.use('/uploads', express.static(uploadsDir));
 // Get all images
 app.get('/api/images', (req, res) => {
     try {
+        const metadata = loadMetadata();
         const files = fs.readdirSync(uploadsDir);
         const images = files
             .filter(file => {
@@ -60,7 +86,8 @@ app.get('/api/images', (req, res) => {
             .map(file => ({
                 id: file,
                 url: `/uploads/${file}`,
-                filename: file
+                filename: file,
+                category: metadata[file]?.category || 'fun'
             }))
             .sort((a, b) => {
                 // Sort by filename (which contains timestamp)
@@ -79,10 +106,19 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
         return res.status(400).json({ error: 'No image file provided' });
     }
     
+    const category = req.body.category || 'fun';
+    const filename = req.file.filename;
+    
+    // Save category metadata
+    const metadata = loadMetadata();
+    metadata[filename] = { category };
+    saveMetadata(metadata);
+    
     res.json({
-        id: req.file.filename,
-        url: `/uploads/${req.file.filename}`,
-        filename: req.file.filename
+        id: filename,
+        url: `/uploads/${filename}`,
+        filename: filename,
+        category: category
     });
 });
 
@@ -90,9 +126,18 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 app.delete('/api/images/:id', (req, res) => {
     try {
         const imagePath = path.join(uploadsDir, req.params.id);
+        const filename = req.params.id;
         
         if (fs.existsSync(imagePath)) {
             fs.unlinkSync(imagePath);
+            
+            // Remove from metadata
+            const metadata = loadMetadata();
+            if (metadata[filename]) {
+                delete metadata[filename];
+                saveMetadata(metadata);
+            }
+            
             res.json({ message: 'Image deleted successfully' });
         } else {
             res.status(404).json({ error: 'Image not found' });

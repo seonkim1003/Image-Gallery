@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Gallery</title>
+    <title>Post Pipeline</title>
     <style>
         * {
             margin: 0;
@@ -154,14 +154,172 @@
             font-weight: 300;
             font-size: 36px;
         }
+
+        .categories {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .category-btn {
+            padding: 10px 24px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 25px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .category-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .category-btn.active {
+            background: white;
+            color: #667eea;
+            border-color: white;
+        }
+
+        .upload-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .upload-modal.show {
+            display: flex;
+        }
+
+        .upload-modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .upload-modal-content h2 {
+            margin-bottom: 20px;
+            color: #667eea;
+            font-weight: 300;
+        }
+
+        .category-select {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .category-option {
+            padding: 12px 20px;
+            background: #f5f5f5;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 16px;
+        }
+
+        .category-option:hover {
+            background: #e8e8e8;
+            border-color: #667eea;
+        }
+
+        .category-option.selected {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .modal-btn.primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .modal-btn.primary:hover {
+            background: #5568d3;
+        }
+
+        .modal-btn.secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .modal-btn.secondary:hover {
+            background: #d0d0d0;
+        }
+
+        .category-badge {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            background: rgba(102, 126, 234, 0.9);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: capitalize;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Image Gallery</h1>
+        <h1>Post Pipeline</h1>
+        <div class="categories">
+            <button class="category-btn active" data-category="all">All</button>
+            <button class="category-btn" data-category="fun">Fun</button>
+            <button class="category-btn" data-category="research">Research</button>
+            <button class="category-btn" data-category="video">Video</button>
+        </div>
         <div class="add-button-container">
             <div class="add-button" id="addButton">+</div>
             <input type="file" id="fileInput" accept="image/*" multiple>
+        </div>
+        <div class="upload-modal" id="uploadModal">
+            <div class="upload-modal-content">
+                <h2>Select Category</h2>
+                <div class="category-select">
+                    <div class="category-option" data-category="fun">Fun</div>
+                    <div class="category-option" data-category="research">Research</div>
+                    <div class="category-option" data-category="video">Video</div>
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn secondary" id="cancelUpload">Cancel</button>
+                    <button class="modal-btn primary" id="confirmUpload" disabled>Upload</button>
+                </div>
+            </div>
         </div>
         <div class="error" id="errorMessage"></div>
         <div class="loading" id="loadingMessage" style="display: none;">Loading images...</div>
@@ -178,14 +336,58 @@
         const emptyState = document.getElementById('emptyState');
         const loadingMessage = document.getElementById('loadingMessage');
         const errorMessage = document.getElementById('errorMessage');
+        const uploadModal = document.getElementById('uploadModal');
+        const categoryOptions = document.querySelectorAll('.category-option');
+        const categoryButtons = document.querySelectorAll('.category-btn');
+        const confirmUploadBtn = document.getElementById('confirmUpload');
+        const cancelUploadBtn = document.getElementById('cancelUpload');
 
         // API base URL - uses relative path, works when deployed
         const API_BASE = '/api';
 
+        let selectedCategory = null;
+        let pendingFiles = [];
+        let currentFilter = 'all';
+
         // Load images from server on page load
         window.addEventListener('DOMContentLoaded', () => {
             loadImages();
+            setupCategoryFilters();
         });
+
+        // Category filter buttons
+        function setupCategoryFilters() {
+            categoryButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const category = btn.dataset.category;
+                    setActiveCategory(category);
+                });
+            });
+        }
+
+        function setActiveCategory(category) {
+            categoryButtons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.category === category) {
+                    btn.classList.add('active');
+                }
+            });
+            currentFilter = category;
+            filterGallery();
+        }
+
+        function filterGallery() {
+            const items = gallery.querySelectorAll('.image-item');
+            items.forEach(item => {
+                const itemCategory = item.dataset.category;
+                if (currentFilter === 'all' || itemCategory === currentFilter) {
+                    item.style.display = 'block';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            updateEmptyState();
+        }
 
         addButton.addEventListener('click', () => {
             fileInput.click();
@@ -193,20 +395,57 @@
 
         fileInput.addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
+            pendingFiles = files.filter(file => file.type.startsWith('image/'));
             
-            files.forEach(file => {
-                if (file.type.startsWith('image/')) {
-                    uploadImage(file);
-                }
-            });
+            if (pendingFiles.length > 0) {
+                showUploadModal();
+            }
 
-            // Reset input so same file can be selected again
+            // Reset input
             fileInput.value = '';
         });
 
-        async function uploadImage(file) {
+        // Category selection in modal
+        categoryOptions.forEach(option => {
+            option.addEventListener('click', () => {
+                categoryOptions.forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                selectedCategory = option.dataset.category;
+                confirmUploadBtn.disabled = false;
+            });
+        });
+
+        confirmUploadBtn.addEventListener('click', () => {
+            if (selectedCategory && pendingFiles.length > 0) {
+                hideUploadModal();
+                pendingFiles.forEach(file => {
+                    uploadImage(file, selectedCategory);
+                });
+                pendingFiles = [];
+                selectedCategory = null;
+            }
+        });
+
+        cancelUploadBtn.addEventListener('click', () => {
+            hideUploadModal();
+            pendingFiles = [];
+            selectedCategory = null;
+        });
+
+        function showUploadModal() {
+            uploadModal.classList.add('show');
+            categoryOptions.forEach(opt => opt.classList.remove('selected'));
+            confirmUploadBtn.disabled = true;
+        }
+
+        function hideUploadModal() {
+            uploadModal.classList.remove('show');
+        }
+
+        async function uploadImage(file, category) {
             const formData = new FormData();
             formData.append('image', file);
+            formData.append('category', category);
 
             addButton.disabled = true;
             
@@ -221,8 +460,8 @@
                 }
 
                 const data = await response.json();
-                addImageToGallery(data.id, data.url);
-                updateEmptyState();
+                addImageToGallery(data.id, data.url, data.category);
+                filterGallery();
             } catch (error) {
                 showError('Failed to upload image: ' + error.message);
             } finally {
@@ -230,7 +469,7 @@
             }
         }
 
-        function addImageToGallery(imageId, imageUrl) {
+        function addImageToGallery(imageId, imageUrl, category) {
             // Check if image already exists
             const existingItem = gallery.querySelector(`[data-id="${imageId}"]`);
             if (existingItem) return;
@@ -238,10 +477,15 @@
             const imageItem = document.createElement('div');
             imageItem.className = 'image-item';
             imageItem.setAttribute('data-id', imageId);
+            imageItem.setAttribute('data-category', category || 'fun');
             
             const img = document.createElement('img');
             img.src = imageUrl;
             img.alt = 'Gallery image';
+            
+            const categoryBadge = document.createElement('div');
+            categoryBadge.className = 'category-badge';
+            categoryBadge.textContent = category || 'fun';
             
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-btn';
@@ -251,10 +495,11 @@
             };
             
             imageItem.appendChild(img);
+            imageItem.appendChild(categoryBadge);
             imageItem.appendChild(deleteBtn);
             gallery.appendChild(imageItem);
             
-            updateEmptyState();
+            filterGallery();
         }
 
         async function deleteImage(imageId, imageItem) {
@@ -271,7 +516,7 @@
                 }
 
                 imageItem.remove();
-                updateEmptyState();
+                filterGallery();
             } catch (error) {
                 showError('Failed to delete image: ' + error.message);
                 deleteBtn.disabled = false;
@@ -293,11 +538,11 @@
                 
                 if (data.images && data.images.length > 0) {
                     data.images.forEach(image => {
-                        addImageToGallery(image.id, image.url);
+                        addImageToGallery(image.id, image.url, image.category);
                     });
                 }
                 
-                updateEmptyState();
+                filterGallery();
             } catch (error) {
                 showError('Failed to load images. Make sure the server is running.');
             } finally {
@@ -306,8 +551,14 @@
         }
 
         function updateEmptyState() {
-            if (gallery.children.length === 0) {
+            const visibleItems = Array.from(gallery.querySelectorAll('.image-item'))
+                .filter(item => item.style.display !== 'none');
+            
+            if (visibleItems.length === 0) {
                 emptyState.style.display = 'block';
+                emptyState.textContent = currentFilter === 'all' 
+                    ? 'No images yet. Click the + button to add some!'
+                    : `No ${currentFilter} posts yet. Click the + button to add some!`;
             } else {
                 emptyState.style.display = 'none';
             }
@@ -338,11 +589,11 @@
             container.style.opacity = '1';
             
             const files = Array.from(e.dataTransfer.files);
-            files.forEach(file => {
-                if (file.type.startsWith('image/')) {
-                    uploadImage(file);
-                }
-            });
+            pendingFiles = files.filter(file => file.type.startsWith('image/'));
+            
+            if (pendingFiles.length > 0) {
+                showUploadModal();
+            }
         });
     </script>
 </body>
