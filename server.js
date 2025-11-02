@@ -235,28 +235,54 @@ app.get('/api/groups/:groupId', (req, res) => {
     }
 });
 
-// Delete image
+// Delete image or group
 app.delete('/api/images/:id', (req, res) => {
     try {
-        const imagePath = path.join(uploadsDir, req.params.id);
-        const filename = req.params.id;
+        const metadata = loadMetadata();
+        const itemId = req.params.id;
         
-        if (fs.existsSync(imagePath)) {
-            fs.unlinkSync(imagePath);
+        // Check if it's a group ID (starts with 'group-')
+        if (itemId.startsWith('group-')) {
+            // Delete entire group
+            const groupId = itemId;
+            const files = fs.readdirSync(uploadsDir);
+            let deletedCount = 0;
             
-            // Remove from metadata
-            const metadata = loadMetadata();
-            if (metadata[filename]) {
-                delete metadata[filename];
-                saveMetadata(metadata);
-            }
+            files.forEach(file => {
+                const fileMeta = metadata[file];
+                if (fileMeta?.groupId === groupId) {
+                    const filePath = path.join(uploadsDir, file);
+                    if (fs.existsSync(filePath)) {
+                        fs.unlinkSync(filePath);
+                        delete metadata[file];
+                        deletedCount++;
+                    }
+                }
+            });
             
-            res.json({ message: 'Image deleted successfully' });
+            saveMetadata(metadata);
+            res.json({ message: `Group deleted successfully (${deletedCount} files)` });
         } else {
-            res.status(404).json({ error: 'Image not found' });
+            // Delete single file
+            const imagePath = path.join(uploadsDir, itemId);
+            const filename = itemId;
+            
+            if (fs.existsSync(imagePath)) {
+                fs.unlinkSync(imagePath);
+                
+                // Remove from metadata
+                if (metadata[filename]) {
+                    delete metadata[filename];
+                    saveMetadata(metadata);
+                }
+                
+                res.json({ message: 'File deleted successfully' });
+            } else {
+                res.status(404).json({ error: 'File not found' });
+            }
         }
     } catch (error) {
-        res.status(500).json({ error: 'Failed to delete image' });
+        res.status(500).json({ error: 'Failed to delete' });
     }
 });
 

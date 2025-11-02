@@ -1337,7 +1337,11 @@
             `;
             downloadBtn.onclick = (e) => {
                 e.stopPropagation();
-                downloadImage(imageUrl, imageId);
+                if (isGroup && groupId) {
+                    downloadGroup(groupId);
+                } else {
+                    downloadImage(imageUrl, imageId);
+                }
             };
             
             const deleteBtn = document.createElement('button');
@@ -1345,7 +1349,11 @@
             deleteBtn.innerHTML = '×';
             deleteBtn.onclick = async (e) => {
                 e.stopPropagation();
-                await deleteImage(imageId, imageItem);
+                if (isGroup && groupId) {
+                    await deleteGroup(groupId, imageItem);
+                } else {
+                    await deleteImage(imageId, imageItem);
+                }
             };
             
             // Make the image container clickable
@@ -1417,6 +1425,68 @@
             } catch (error) {
                 showError('Failed to delete image: ' + error.message);
                 deleteBtn.disabled = false;
+            }
+        }
+
+        async function deleteGroup(groupId, imageItem) {
+            const deleteBtn = imageItem.querySelector('.delete-btn');
+            deleteBtn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/images/${groupId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Delete failed');
+                }
+
+                imageItem.remove();
+                filterGallery();
+            } catch (error) {
+                showError('Failed to delete group: ' + error.message);
+                deleteBtn.disabled = false;
+            }
+        }
+
+        async function downloadGroup(groupId) {
+            try {
+                // Fetch group details
+                const response = await fetch(`${API_BASE}/groups/${groupId}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load group');
+                }
+
+                const data = await response.json();
+                
+                // Download all files in the group
+                for (let i = 0; i < data.files.length; i++) {
+                    const file = data.files[i];
+                    
+                    // Add a small delay between downloads to avoid browser blocking
+                    await new Promise(resolve => setTimeout(resolve, i * 300));
+                    
+                    fetch(file.url)
+                        .then(response => response.blob())
+                        .then(blob => {
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            // Use filename from the file object or extract from URL
+                            const filename = file.filename || file.url.split('/').pop();
+                            a.download = filename;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                        })
+                        .catch(error => {
+                            console.error('Failed to download file:', file.url, error);
+                        });
+                }
+            } catch (error) {
+                showError('Failed to download group: ' + error.message);
             }
         }
 
