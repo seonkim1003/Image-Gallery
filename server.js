@@ -87,7 +87,9 @@ app.get('/api/images', (req, res) => {
                 id: file,
                 url: `/uploads/${file}`,
                 filename: file,
-                category: metadata[file]?.category || 'fun'
+                category: metadata[file]?.category || 'fun',
+                description: metadata[file]?.description || '',
+                uploadDate: metadata[file]?.uploadDate || new Date().toISOString()
             }))
             .sort((a, b) => {
                 // Sort by filename (which contains timestamp)
@@ -107,18 +109,26 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
     }
     
     const category = req.body.category || 'fun';
+    const description = req.body.description || '';
     const filename = req.file.filename;
+    const uploadDate = new Date().toISOString();
     
-    // Save category metadata
+    // Save metadata with category, description, and date
     const metadata = loadMetadata();
-    metadata[filename] = { category };
+    metadata[filename] = { 
+        category,
+        description,
+        uploadDate
+    };
     saveMetadata(metadata);
     
     res.json({
         id: filename,
         url: `/uploads/${filename}`,
         filename: filename,
-        category: category
+        category: category,
+        description: description,
+        uploadDate: uploadDate
     });
 });
 

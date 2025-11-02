@@ -400,6 +400,197 @@
             font-size: 14px;
             opacity: 0.8;
         }
+
+        .description-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            margin-top: 10px;
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        .description-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .upload-progress-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            max-width: 600px;
+            width: 90%;
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1500;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .upload-progress-container.show {
+            display: block;
+        }
+
+        .upload-progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .upload-progress-header h3 {
+            margin: 0;
+            color: #667eea;
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .close-progress {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .close-progress:hover {
+            color: #333;
+        }
+
+        .upload-item {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .upload-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .upload-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .upload-item-name {
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+
+        .upload-item-status {
+            font-size: 12px;
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .upload-progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .upload-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .drag-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(102, 126, 234, 0.3);
+            border: 4px dashed rgba(255, 255, 255, 0.8);
+            z-index: 999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .drag-overlay.active {
+            display: flex;
+        }
+
+        .drag-overlay-text {
+            color: white;
+            font-size: 32px;
+            font-weight: 500;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .date-badge {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        .description-display {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            max-width: 90%;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            display: none;
+        }
+
+        .image-item:hover .description-display {
+            opacity: 1;
+            display: block;
+        }
+
+        .full-image-description {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            max-width: 600px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -417,17 +608,32 @@
         </div>
         <div class="upload-modal" id="uploadModal">
             <div class="upload-modal-content">
-                <h2>Select Category</h2>
+                <h2>Upload Settings</h2>
                 <div class="category-select">
                     <div class="category-option" data-category="fun">Fun</div>
                     <div class="category-option" data-category="research">Research</div>
                     <div class="category-option" data-category="video">Video</div>
                 </div>
+                <textarea class="description-input" id="descriptionInput" placeholder="Add a description for your upload(s)..."></textarea>
                 <div class="modal-buttons">
                     <button class="modal-btn secondary" id="cancelUpload">Cancel</button>
                     <button class="modal-btn primary" id="confirmUpload" disabled>Upload</button>
                 </div>
             </div>
+        </div>
+        
+        <!-- Drag Overlay -->
+        <div class="drag-overlay" id="dragOverlay">
+            <div class="drag-overlay-text">Drop files here to upload</div>
+        </div>
+
+        <!-- Upload Progress Container -->
+        <div class="upload-progress-container" id="uploadProgressContainer">
+            <div class="upload-progress-header">
+                <h3>Upload Progress</h3>
+                <button class="close-progress" id="closeProgress">×</button>
+            </div>
+            <div id="uploadProgressList"></div>
         </div>
         <div class="error" id="errorMessage"></div>
         <div class="loading" id="loadingMessage" style="display: none;">Loading images...</div>
@@ -458,10 +664,15 @@
         const categoryButtons = document.querySelectorAll('.category-btn');
         const confirmUploadBtn = document.getElementById('confirmUpload');
         const cancelUploadBtn = document.getElementById('cancelUpload');
+        const descriptionInput = document.getElementById('descriptionInput');
         const fullImageModal = document.getElementById('fullImageModal');
         const fullImage = document.getElementById('fullImage');
         const fullImageInfo = document.getElementById('fullImageInfo');
         const closeFullImage = document.getElementById('closeFullImage');
+        const dragOverlay = document.getElementById('dragOverlay');
+        const uploadProgressContainer = document.getElementById('uploadProgressContainer');
+        const uploadProgressList = document.getElementById('uploadProgressList');
+        const closeProgress = document.getElementById('closeProgress');
 
         // API base URL - uses relative path, works when deployed
         const API_BASE = '/api';
@@ -469,13 +680,65 @@
         let selectedCategory = null;
         let pendingFiles = [];
         let currentFilter = 'all';
+        let activeUploads = new Map();
 
         // Load images from server on page load
         window.addEventListener('DOMContentLoaded', () => {
             loadImages();
             setupCategoryFilters();
             setupFullImageModal();
+            setupDragAndDrop();
+            setupProgressContainer();
         });
+
+        function setupProgressContainer() {
+            closeProgress.addEventListener('click', () => {
+                uploadProgressContainer.classList.remove('show');
+            });
+        }
+
+        function setupDragAndDrop() {
+            const container = document.querySelector('.container');
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                container.addEventListener(eventName, preventDefaults, false);
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            container.addEventListener('dragenter', () => {
+                dragOverlay.classList.add('active');
+            });
+
+            container.addEventListener('dragleave', (e) => {
+                if (e.target === container || !container.contains(e.relatedTarget)) {
+                    dragOverlay.classList.remove('active');
+                }
+            });
+
+            container.addEventListener('drop', (e) => {
+                dragOverlay.classList.remove('active');
+                const files = Array.from(e.dataTransfer.files);
+                handleFiles(files);
+            });
+
+            // Also handle drag events on the whole page
+            ['dragenter', 'dragover'].forEach(eventName => {
+                document.addEventListener(eventName, () => {
+                    dragOverlay.classList.add('active');
+                });
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                document.addEventListener(eventName, () => {
+                    dragOverlay.classList.remove('active');
+                });
+            });
+        }
 
         // Setup full image modal functionality
         function setupFullImageModal() {
@@ -497,11 +760,15 @@
             });
         }
 
-        function showFullImage(imageUrl, category) {
+        function showFullImage(imageUrl, category, description = '', uploadDate = null) {
             fullImage.src = imageUrl;
-            fullImageInfo.textContent = `Category: ${category}`;
+            fullImageInfo.innerHTML = `
+                <div>Category: <strong>${category}</strong></div>
+                ${uploadDate ? `<div style="margin-top: 5px; font-size: 12px;">Uploaded: ${formatDate(uploadDate)}</div>` : ''}
+                ${description ? `<div class="full-image-description">${description}</div>` : ''}
+            `;
             fullImageModal.classList.add('show');
-            document.body.style.overflow = 'hidden'; // Prevent scrolling
+            document.body.style.overflow = 'hidden';
         }
 
         function hideFullImage() {
@@ -549,15 +816,17 @@
 
         fileInput.addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
+            handleFiles(files);
+            fileInput.value = '';
+        });
+
+        function handleFiles(files) {
             pendingFiles = files.filter(file => file.type.startsWith('image/'));
             
             if (pendingFiles.length > 0) {
                 showUploadModal();
             }
-
-            // Reset input
-            fileInput.value = '';
-        });
+        }
 
         // Category selection in modal
         categoryOptions.forEach(option => {
@@ -571,12 +840,15 @@
 
         confirmUploadBtn.addEventListener('click', () => {
             if (selectedCategory && pendingFiles.length > 0) {
+                const description = descriptionInput.value.trim();
                 hideUploadModal();
-                pendingFiles.forEach(file => {
-                    uploadImage(file, selectedCategory);
-                });
+                
+                // Upload all files together with same category and description
+                uploadBatch(pendingFiles, selectedCategory, description);
+                
                 pendingFiles = [];
                 selectedCategory = null;
+                descriptionInput.value = '';
             }
         });
 
@@ -584,24 +856,89 @@
             hideUploadModal();
             pendingFiles = [];
             selectedCategory = null;
+            descriptionInput.value = '';
         });
 
         function showUploadModal() {
             uploadModal.classList.add('show');
             categoryOptions.forEach(opt => opt.classList.remove('selected'));
             confirmUploadBtn.disabled = true;
+            descriptionInput.value = '';
         }
 
         function hideUploadModal() {
             uploadModal.classList.remove('show');
         }
 
-        async function uploadImage(file, category) {
+        async function uploadBatch(files, category, description) {
+            uploadProgressContainer.classList.add('show');
+            uploadProgressList.innerHTML = '';
+            
+            // Create progress items for each file
+            files.forEach(file => {
+                const uploadId = Date.now() + '-' + Math.random();
+                createProgressItem(uploadId, file.name);
+                uploadFileWithProgress(uploadId, file, category, description);
+            });
+        }
+
+        function createProgressItem(uploadId, fileName) {
+            const item = document.createElement('div');
+            item.className = 'upload-item';
+            item.id = `upload-${uploadId}`;
+            item.innerHTML = `
+                <div class="upload-item-header">
+                    <div class="upload-item-name">${fileName}</div>
+                    <div class="upload-item-status" id="status-${uploadId}">Preparing...</div>
+                </div>
+                <div class="upload-progress-bar">
+                    <div class="upload-progress-fill" id="progress-${uploadId}"></div>
+                </div>
+            `;
+            uploadProgressList.appendChild(item);
+            
+            // Simulate progress (since we don't have real progress from fetch)
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress < 90) {
+                    updateProgress(uploadId, Math.min(progress, 90));
+                } else {
+                    clearInterval(progressInterval);
+                }
+            }, 200);
+        }
+
+        function updateProgress(uploadId, percent) {
+            const progressBar = document.getElementById(`progress-${uploadId}`);
+            if (progressBar) {
+                progressBar.style.width = percent + '%';
+            }
+        }
+
+        function updateStatus(uploadId, status, isComplete = false) {
+            const statusEl = document.getElementById(`status-${uploadId}`);
+            if (statusEl) {
+                statusEl.textContent = status;
+            }
+            if (isComplete) {
+                updateProgress(uploadId, 100);
+                setTimeout(() => {
+                    const item = document.getElementById(`upload-${uploadId}`);
+                    if (item) {
+                        item.style.opacity = '0.5';
+                    }
+                }, 1000);
+            }
+        }
+
+        async function uploadFileWithProgress(uploadId, file, category, description) {
             const formData = new FormData();
             formData.append('image', file);
             formData.append('category', category);
+            formData.append('description', description);
 
-            addButton.disabled = true;
+            updateStatus(uploadId, 'Uploading...');
             
             try {
                 const response = await fetch(`${API_BASE}/upload`, {
@@ -614,16 +951,45 @@
                 }
 
                 const data = await response.json();
-                addImageToGallery(data.id, data.url, data.category);
+                updateStatus(uploadId, 'Complete!', true);
+                addImageToGallery(data.id, data.url, data.category, data.description, data.uploadDate);
                 filterGallery();
+                
+                // Remove from active uploads after a delay
+                setTimeout(() => {
+                    const item = document.getElementById(`upload-${uploadId}`);
+                    if (item) {
+                        item.remove();
+                    }
+                    // Hide progress container if no more uploads
+                    if (uploadProgressList.children.length === 0) {
+                        uploadProgressContainer.classList.remove('show');
+                    }
+                }, 2000);
             } catch (error) {
-                showError('Failed to upload image: ' + error.message);
-            } finally {
-                addButton.disabled = false;
+                updateStatus(uploadId, 'Failed!', false);
+                showError('Failed to upload ' + file.name + ': ' + error.message);
             }
         }
 
-        function addImageToGallery(imageId, imageUrl, category) {
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffTime = Math.abs(now - date);
+            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0) {
+                return 'Today';
+            } else if (diffDays === 1) {
+                return 'Yesterday';
+            } else if (diffDays < 7) {
+                return `${diffDays} days ago`;
+            } else {
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+            }
+        }
+
+        function addImageToGallery(imageId, imageUrl, category, description = '', uploadDate = null) {
             // Check if image already exists
             const existingItem = gallery.querySelector(`[data-id="${imageId}"]`);
             if (existingItem) return;
@@ -637,17 +1003,22 @@
             img.src = imageUrl;
             img.alt = 'Gallery image';
             img.style.cursor = 'pointer';
-            img.onclick = (e) => {
-                // Prevent triggering when clicking buttons
-                if (e.target !== img && !e.target.closest('.download-btn') && !e.target.closest('.delete-btn')) {
-                    return;
-                }
-                showFullImage(imageUrl, category || 'fun');
-            };
             
             const categoryBadge = document.createElement('div');
             categoryBadge.className = 'category-badge';
             categoryBadge.textContent = category || 'fun';
+            
+            const dateBadge = document.createElement('div');
+            dateBadge.className = 'date-badge';
+            dateBadge.textContent = formatDate(uploadDate || new Date().toISOString());
+            
+            const descriptionDisplay = document.createElement('div');
+            descriptionDisplay.className = 'description-display';
+            if (description) {
+                descriptionDisplay.textContent = description;
+            } else {
+                descriptionDisplay.style.display = 'none';
+            }
             
             const downloadBtn = document.createElement('button');
             downloadBtn.className = 'download-btn';
@@ -657,7 +1028,7 @@
                 </svg>
             `;
             downloadBtn.onclick = (e) => {
-                e.stopPropagation(); // Prevent triggering image click
+                e.stopPropagation();
                 downloadImage(imageUrl, imageId);
             };
             
@@ -665,21 +1036,24 @@
             deleteBtn.className = 'delete-btn';
             deleteBtn.innerHTML = '×';
             deleteBtn.onclick = async (e) => {
-                e.stopPropagation(); // Prevent triggering image click
+                e.stopPropagation();
                 await deleteImage(imageId, imageItem);
             };
             
-            // Make the image container clickable (not the buttons)
+            // Make the image container clickable
             imageItem.style.cursor = 'pointer';
             imageItem.onclick = (e) => {
-                // Only open full image if clicking on the item itself, not buttons
-                if (e.target === img || e.target === imageItem || e.target === categoryBadge) {
-                    showFullImage(imageUrl, category || 'fun');
+                if (e.target !== downloadBtn && e.target !== deleteBtn && !e.target.closest('.download-btn') && !e.target.closest('.delete-btn')) {
+                    showFullImage(imageUrl, category || 'fun', description, uploadDate || new Date().toISOString());
                 }
             };
             
             imageItem.appendChild(img);
             imageItem.appendChild(categoryBadge);
+            imageItem.appendChild(dateBadge);
+            if (description) {
+                imageItem.appendChild(descriptionDisplay);
+            }
             imageItem.appendChild(downloadBtn);
             imageItem.appendChild(deleteBtn);
             gallery.appendChild(imageItem);
@@ -747,7 +1121,7 @@
                 
                 if (data.images && data.images.length > 0) {
                     data.images.forEach(image => {
-                        addImageToGallery(image.id, image.url, image.category);
+                        addImageToGallery(image.id, image.url, image.category, image.description || '', image.uploadDate || null);
                     });
                 }
                 
@@ -781,29 +1155,6 @@
             }, 5000);
         }
 
-        // Allow drag and drop
-        const container = document.querySelector('.container');
-        
-        container.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            container.style.opacity = '0.8';
-        });
-
-        container.addEventListener('dragleave', () => {
-            container.style.opacity = '1';
-        });
-
-        container.addEventListener('drop', (e) => {
-            e.preventDefault();
-            container.style.opacity = '1';
-            
-            const files = Array.from(e.dataTransfer.files);
-            pendingFiles = files.filter(file => file.type.startsWith('image/'));
-            
-            if (pendingFiles.length > 0) {
-                showUploadModal();
-            }
-        });
     </script>
 </body>
 </html>
