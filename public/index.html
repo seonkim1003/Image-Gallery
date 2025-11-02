@@ -117,6 +117,40 @@
             cursor: not-allowed;
         }
 
+        .image-item .download-btn {
+            position: absolute;
+            top: 8px;
+            right: 45px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            color: #667eea;
+            transition: all 0.2s ease;
+        }
+
+        .image-item .download-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .image-item .download-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .image-item .download-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
         #fileInput {
             display: none;
         }
@@ -487,6 +521,17 @@
             categoryBadge.className = 'category-badge';
             categoryBadge.textContent = category || 'fun';
             
+            const downloadBtn = document.createElement('button');
+            downloadBtn.className = 'download-btn';
+            downloadBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            `;
+            downloadBtn.onclick = () => {
+                downloadImage(imageUrl, imageId);
+            };
+            
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-btn';
             deleteBtn.innerHTML = '×';
@@ -496,10 +541,35 @@
             
             imageItem.appendChild(img);
             imageItem.appendChild(categoryBadge);
+            imageItem.appendChild(downloadBtn);
             imageItem.appendChild(deleteBtn);
             gallery.appendChild(imageItem);
             
             filterGallery();
+        }
+
+        function downloadImage(imageUrl, imageId) {
+            // Get the filename from the imageId or URL
+            const filename = imageId || imageUrl.split('/').pop();
+            
+            // Fetch the image and create a download link
+            fetch(imageUrl)
+                .then(response => response.blob())
+                .then(blob => {
+                    // Create a temporary URL for the blob
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    // Clean up the temporary URL
+                    window.URL.revokeObjectURL(url);
+                })
+                .catch(error => {
+                    showError('Failed to download image: ' + error.message);
+                });
         }
 
         async function deleteImage(imageId, imageItem) {
