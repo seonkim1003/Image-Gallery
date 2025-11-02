@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Gallery</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .add-button-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 40px 0;
+        }
+
+        .add-button {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: white;
+            border: 4px solid rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 48px;
+            color: #667eea;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .add-button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .add-button:active {
+            transform: scale(0.95);
+        }
+
+        .add-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .image-item {
+            position: relative;
+            aspect-ratio: 1;
+            border-radius: 12px;
+            overflow: hidden;
+            background: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .image-item:hover {
+            transform: translateY(-5px);
+        }
+
+        .image-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .image-item .delete-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #e74c3c;
+            transition: all 0.2s ease;
+        }
+
+        .image-item .delete-btn:hover {
+            background: #e74c3c;
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .image-item .delete-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: white;
+            margin-top: 100px;
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            margin-top: 20px;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .error {
+            text-align: center;
+            color: #ff6b6b;
+            margin-top: 20px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            display: none;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 20px;
+            font-weight: 300;
+            font-size: 36px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Image Gallery</h1>
+        <div class="add-button-container">
+            <div class="add-button" id="addButton">+</div>
+            <input type="file" id="fileInput" accept="image/*" multiple>
+        </div>
+        <div class="error" id="errorMessage"></div>
+        <div class="loading" id="loadingMessage" style="display: none;">Loading images...</div>
+        <div class="gallery" id="gallery"></div>
+        <div class="empty-state" id="emptyState" style="display: none;">
+            No images yet. Click the + button to add some!
+        </div>
+    </div>
+
+    <script>
+        const addButton = document.getElementById('addButton');
+        const fileInput = document.getElementById('fileInput');
+        const gallery = document.getElementById('gallery');
+        const emptyState = document.getElementById('emptyState');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // API base URL - uses relative path, works when deployed
+        const API_BASE = '/api';
+
+        // Load images from server on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadImages();
+        });
+
+        addButton.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            
+            files.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    uploadImage(file);
+                }
+            });
+
+            // Reset input so same file can be selected again
+            fileInput.value = '';
+        });
+
+        async function uploadImage(file) {
+            const formData = new FormData();
+            formData.append('image', file);
+
+            addButton.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Upload failed');
+                }
+
+                const data = await response.json();
+                addImageToGallery(data.id, data.url);
+                updateEmptyState();
+            } catch (error) {
+                showError('Failed to upload image: ' + error.message);
+            } finally {
+                addButton.disabled = false;
+            }
+        }
+
+        function addImageToGallery(imageId, imageUrl) {
+            // Check if image already exists
+            const existingItem = gallery.querySelector(`[data-id="${imageId}"]`);
+            if (existingItem) return;
+
+            const imageItem = document.createElement('div');
+            imageItem.className = 'image-item';
+            imageItem.setAttribute('data-id', imageId);
+            
+            const img = document.createElement('img');
+            img.src = imageUrl;
+            img.alt = 'Gallery image';
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.onclick = async () => {
+                await deleteImage(imageId, imageItem);
+            };
+            
+            imageItem.appendChild(img);
+            imageItem.appendChild(deleteBtn);
+            gallery.appendChild(imageItem);
+            
+            updateEmptyState();
+        }
+
+        async function deleteImage(imageId, imageItem) {
+            const deleteBtn = imageItem.querySelector('.delete-btn');
+            deleteBtn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/images/${imageId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Delete failed');
+                }
+
+                imageItem.remove();
+                updateEmptyState();
+            } catch (error) {
+                showError('Failed to delete image: ' + error.message);
+                deleteBtn.disabled = false;
+            }
+        }
+
+        async function loadImages() {
+            loadingMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE}/images`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load images');
+                }
+
+                const data = await response.json();
+                
+                if (data.images && data.images.length > 0) {
+                    data.images.forEach(image => {
+                        addImageToGallery(image.id, image.url);
+                    });
+                }
+                
+                updateEmptyState();
+            } catch (error) {
+                showError('Failed to load images. Make sure the server is running.');
+            } finally {
+                loadingMessage.style.display = 'none';
+            }
+        }
+
+        function updateEmptyState() {
+            if (gallery.children.length === 0) {
+                emptyState.style.display = 'block';
+            } else {
+                emptyState.style.display = 'none';
+            }
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            setTimeout(() => {
+                errorMessage.style.display = 'none';
+            }, 5000);
+        }
+
+        // Allow drag and drop
+        const container = document.querySelector('.container');
+        
+        container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            container.style.opacity = '0.8';
+        });
+
+        container.addEventListener('dragleave', () => {
+            container.style.opacity = '1';
+        });
+
+        container.addEventListener('drop', (e) => {
+            e.preventDefault();
+            container.style.opacity = '1';
+            
+            const files = Array.from(e.dataTransfer.files);
+            files.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    uploadImage(file);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
