@@ -186,6 +186,26 @@ app.get('/api/images', (req, res) => {
     }
 });
 
+// Helper function to extract number from filename
+function extractOrderFromFilename(filename) {
+    // Remove extension
+    const nameWithoutExt = path.parse(filename).name;
+    
+    // Try to find numbers in the filename
+    // Look for patterns like: "1", "image1", "photo_2", "3_image", etc.
+    const numberMatch = nameWithoutExt.match(/\d+/);
+    if (numberMatch) {
+        const number = parseInt(numberMatch[0], 10);
+        // Only use if it's a reasonable number (1-9999)
+        if (number >= 1 && number <= 9999) {
+            return number - 1; // Convert to 0-based index
+        }
+    }
+    
+    // Also try from original filename if provided
+    return null;
+}
+
 // Upload image/video (supports batch uploads with grouping)
 app.post('/api/upload', upload.single('image'), (req, res) => {
     if (!req.file) {
@@ -199,14 +219,37 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
     const groupId = req.body.groupId || null;
     const fileType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
     
-    // Save metadata with category, description, date, and group
+    // Extract order from original filename
+    const originalFilename = req.file.originalname;
+    let order = extractOrderFromFilename(originalFilename);
+    
+    // If no order found and we have a groupId, check existing files in group for max order
+    if (order === null && groupId) {
+        const metadata = loadMetadata();
+        const files = fs.readdirSync(uploadsDir);
+        let maxOrder = -1;
+        
+        files.forEach(file => {
+            const fileMeta = metadata[file];
+            if (fileMeta?.groupId === groupId && fileMeta.order !== undefined) {
+                maxOrder = Math.max(maxOrder, fileMeta.order);
+            }
+        });
+        
+        order = maxOrder + 1; // Set to next order after max
+    } else if (order === null) {
+        order = 999; // Default for non-grouped files
+    }
+    
+    // Save metadata with category, description, date, group, and order
     const metadata = loadMetadata();
     metadata[filename] = { 
         category,
         description,
         uploadDate,
         type: fileType,
-        groupId: groupId
+        groupId: groupId,
+        order: order
     };
     saveMetadata(metadata);
     
@@ -218,7 +261,8 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
         description: description,
         uploadDate: uploadDate,
         type: fileType,
-        groupId: groupId
+        groupId: groupId,
+        order: order
     });
 });
 
