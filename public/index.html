@@ -735,6 +735,46 @@
             font-size: 14px;
             opacity: 0.9;
         }
+
+        .group-modal-item.selected-title {
+            border: 4px solid #667eea;
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .title-image-label {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(102, 126, 234, 0.9);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            z-index: 10;
+        }
+
+        .set-title-btn {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            background: rgba(102, 126, 234, 0.9);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+
+        .set-title-btn:hover {
+            background: rgba(102, 126, 234, 1);
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body>
@@ -866,6 +906,8 @@
             });
         }
 
+        let currentTitleImageId = null;
+
         function showGroupModal(groupId, category, description, uploadDate) {
             groupModal.classList.add('show');
             document.body.style.overflow = 'hidden';
@@ -876,42 +918,98 @@
                 .then(data => {
                     groupModalContent.innerHTML = '';
                     
+                    // Find current title image
+                    const titleImageId = data.files.find(f => f.isTitle)?.id || data.files[0]?.id || null;
+                    currentTitleImageId = titleImageId;
+                    
                     data.files.forEach(file => {
                         const item = document.createElement('div');
                         item.className = 'group-modal-item';
+                        if (file.id === titleImageId || (file.id === data.files[0]?.id && !titleImageId)) {
+                            item.classList.add('selected-title');
+                            
+                            const titleLabel = document.createElement('div');
+                            titleLabel.className = 'title-image-label';
+                            titleLabel.textContent = 'Title Image';
+                            item.appendChild(titleLabel);
+                        }
+                        
+                        const mediaContainer = document.createElement('div');
+                        mediaContainer.style.position = 'relative';
+                        mediaContainer.style.width = '100%';
+                        mediaContainer.style.height = '100%';
                         
                         if (file.type === 'video') {
                             const video = document.createElement('video');
                             video.src = file.url;
                             video.controls = true;
                             video.preload = 'metadata';
+                            video.style.width = '100%';
+                            video.style.height = '100%';
+                            video.style.objectFit = 'cover';
                             video.onclick = () => {
                                 showFullImage(file.url, category, description, uploadDate, 'video');
                                 hideGroupModal();
                             };
-                            item.appendChild(video);
+                            mediaContainer.appendChild(video);
                         } else {
                             const img = document.createElement('img');
                             img.src = file.url;
                             img.alt = 'Group image';
+                            img.style.width = '100%';
+                            img.style.height = '100%';
+                            img.style.objectFit = 'cover';
                             img.onclick = () => {
                                 showFullImage(file.url, category, description, uploadDate, 'image');
                                 hideGroupModal();
                             };
-                            item.appendChild(img);
+                            mediaContainer.appendChild(img);
                         }
                         
+                        const setTitleBtn = document.createElement('button');
+                        setTitleBtn.className = 'set-title-btn';
+                        setTitleBtn.textContent = 'Set as Title';
+                        setTitleBtn.onclick = async (e) => {
+                            e.stopPropagation();
+                            await setTitleImage(groupId, file.id);
+                            showGroupModal(groupId, category, description, uploadDate);
+                        };
+                        mediaContainer.appendChild(setTitleBtn);
+                        
+                        item.appendChild(mediaContainer);
                         groupModalContent.appendChild(item);
                     });
                     
                     groupInfo.innerHTML = `
                         <h3>Group (${data.files.length} ${data.files.length === 1 ? 'file' : 'files'})</h3>
                         <p>Category: ${category} | Uploaded: ${formatDate(uploadDate)}${description ? ` | ${description}` : ''}</p>
+                        <p style="font-size: 12px; margin-top: 5px; opacity: 0.8;">Click "Set as Title" on any image to make it the group thumbnail</p>
                     `;
                 })
                 .catch(error => {
                     showError('Failed to load group: ' + error.message);
                 });
+        }
+
+        async function setTitleImage(groupId, titleImageId) {
+            try {
+                const response = await fetch(`${API_BASE}/groups/${groupId}/title`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ titleImageId })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update title image');
+                }
+
+                // Reload images to reflect the change
+                loadImages();
+            } catch (error) {
+                showError('Failed to set title image: ' + error.message);
+            }
         }
 
         function hideGroupModal() {
@@ -1451,40 +1549,33 @@
 
         async function downloadGroup(groupId) {
             try {
-                // Fetch group details
-                const response = await fetch(`${API_BASE}/groups/${groupId}`);
+                // Download as zip file from backend
+                const response = await fetch(`${API_BASE}/groups/${groupId}/download`);
                 
                 if (!response.ok) {
-                    throw new Error('Failed to load group');
+                    throw new Error('Failed to download group');
                 }
 
-                const data = await response.json();
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
                 
-                // Download all files in the group
-                for (let i = 0; i < data.files.length; i++) {
-                    const file = data.files[i];
-                    
-                    // Add a small delay between downloads to avoid browser blocking
-                    await new Promise(resolve => setTimeout(resolve, i * 300));
-                    
-                    fetch(file.url)
-                        .then(response => response.blob())
-                        .then(blob => {
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            // Use filename from the file object or extract from URL
-                            const filename = file.filename || file.url.split('/').pop();
-                            a.download = filename;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            window.URL.revokeObjectURL(url);
-                        })
-                        .catch(error => {
-                            console.error('Failed to download file:', file.url, error);
-                        });
+                // Get filename from Content-Disposition header or use default
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'group.zip';
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+                    if (filenameMatch) {
+                        filename = filenameMatch[1];
+                    }
                 }
+                
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
             } catch (error) {
                 showError('Failed to download group: ' + error.message);
             }

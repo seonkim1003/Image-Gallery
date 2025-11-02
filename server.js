@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
+const archiver = require('archiver');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -101,7 +102,8 @@ app.get('/api/images', (req, res) => {
                         category: fileMeta.category || 'fun',
                         description: fileMeta.description || '',
                         uploadDate: fileMeta.uploadDate || new Date().toISOString(),
-                        titleImage: null
+                        titleImage: null,
+                        titleImageId: null
                     };
                 }
                 groups[fileMeta.groupId].files.push({
@@ -110,14 +112,6 @@ app.get('/api/images', (req, res) => {
                     filename: file,
                     type: fileMeta.type || 'image'
                 });
-                // First file is the title image
-                if (!groups[fileMeta.groupId].titleImage) {
-                    groups[fileMeta.groupId].titleImage = {
-                        id: file,
-                        url: `/uploads/${file}`,
-                        filename: file
-                    };
-                }
             } else {
                 // Individual file
                 individualFiles.push({
@@ -131,6 +125,32 @@ app.get('/api/images', (req, res) => {
                     isGroup: false
                 });
             }
+        });
+        
+        // Find title image for each group
+        Object.values(groups).forEach(group => {
+            // Find title image ID from any file in the group
+            let titleImageId = null;
+            for (const file of group.files) {
+                const fileMeta = metadata[file.id];
+                if (fileMeta?.titleImageId) {
+                    titleImageId = fileMeta.titleImageId;
+                    break;
+                }
+            }
+            
+            // If no title image set, use first file
+            if (!titleImageId && group.files.length > 0) {
+                titleImageId = group.files[0].id;
+            }
+            
+            // Find the title image file
+            const titleFile = group.files.find(f => f.id === titleImageId) || group.files[0];
+            group.titleImage = {
+                id: titleFile.id,
+                url: titleFile.url,
+                filename: titleFile.filename
+            };
         });
         
         // Convert groups to items
@@ -223,15 +243,118 @@ app.get('/api/groups/:groupId', (req, res) => {
         const firstFile = groupFiles[0];
         const fileMeta = metadata[firstFile.id];
         
+        // Find the title image ID from any file in the group
+        let titleImageId = null;
+        for (const file of groupFiles) {
+            const meta = metadata[file.id];
+            if (meta?.titleImageId) {
+                titleImageId = meta.titleImageId;
+                break;
+            }
+        }
+        
+        // Mark which file is the title image
+        const filesWithTitle = groupFiles.map(file => ({
+            ...file,
+            isTitle: titleImageId ? file.id === titleImageId : file.id === groupFiles[0].id
+        }));
+        
         res.json({
             id: groupId,
-            files: groupFiles,
+            files: filesWithTitle,
             category: fileMeta?.category || 'fun',
             description: fileMeta?.description || '',
             uploadDate: fileMeta?.uploadDate || new Date().toISOString()
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to load group' });
+    }
+});
+
+// Update group title image
+app.put('/api/groups/:groupId/title', (req, res) => {
+    try {
+        const groupId = req.params.groupId;
+        const titleImageId = req.body.titleImageId;
+        
+        if (!titleImageId) {
+            return res.status(400).json({ error: 'Title image ID required' });
+        }
+        
+        const metadata = loadMetadata();
+        const filePath = path.join(uploadsDir, titleImageId);
+        
+        // Verify file exists and belongs to the group
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+        
+        const fileMeta = metadata[titleImageId];
+        if (!fileMeta || fileMeta.groupId !== groupId) {
+            return res.status(400).json({ error: 'File does not belong to this group' });
+        }
+        
+        // Update title image for all files in the group
+        const files = fs.readdirSync(uploadsDir);
+        files.forEach(file => {
+            const meta = metadata[file];
+            if (meta?.groupId === groupId) {
+                meta.titleImageId = titleImageId;
+            }
+        });
+        
+        saveMetadata(metadata);
+        res.json({ message: 'Title image updated successfully', titleImageId });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update title image' });
+    }
+});
+
+// Download group as zip
+app.get('/api/groups/:groupId/download', (req, res) => {
+    try {
+        const groupId = req.params.groupId;
+        const metadata = loadMetadata();
+        const files = fs.readdirSync(uploadsDir);
+        const groupFiles = [];
+        
+        // Get all files in the group
+        files.forEach(file => {
+            const fileMeta = metadata[file];
+            if (fileMeta?.groupId === groupId) {
+                const ext = path.extname(file).toLowerCase();
+                if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext)) {
+                    groupFiles.push({
+                        id: file,
+                        path: path.join(uploadsDir, file),
+                        filename: file
+                    });
+                }
+            }
+        });
+        
+        if (groupFiles.length === 0) {
+            return res.status(404).json({ error: 'Group not found' });
+        }
+        
+        // Get description for zip filename
+        const firstFile = groupFiles[0];
+        const fileMeta = metadata[firstFile.id];
+        const description = fileMeta?.description || 'group';
+        const zipFilename = description.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'group';
+        
+        // Create zip file
+        res.attachment(`${zipFilename}.zip`);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.pipe(res);
+        
+        groupFiles.forEach(file => {
+            archive.file(file.path, { name: file.filename });
+        });
+        
+        archive.finalize();
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create zip file' });
     }
 });
 
