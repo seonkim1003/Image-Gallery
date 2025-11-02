@@ -326,6 +326,80 @@
             font-weight: 500;
             text-transform: capitalize;
         }
+
+        .image-item img {
+            cursor: pointer;
+        }
+
+        .full-image-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .full-image-modal.show {
+            display: flex;
+        }
+
+        .full-image-container {
+            position: relative;
+            max-width: 90vw;
+            max-height: 90vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .full-image-container img {
+            max-width: 100%;
+            max-height: 90vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .close-full-image {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .close-full-image:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: scale(1.1);
+        }
+
+        .full-image-info {
+            position: absolute;
+            bottom: -40px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: white;
+            font-size: 14px;
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
@@ -363,6 +437,15 @@
         </div>
     </div>
 
+    <!-- Full Image Modal -->
+    <div class="full-image-modal" id="fullImageModal">
+        <div class="full-image-container">
+            <button class="close-full-image" id="closeFullImage">×</button>
+            <img id="fullImage" src="" alt="Full size image">
+            <div class="full-image-info" id="fullImageInfo"></div>
+        </div>
+    </div>
+
     <script>
         const addButton = document.getElementById('addButton');
         const fileInput = document.getElementById('fileInput');
@@ -375,6 +458,10 @@
         const categoryButtons = document.querySelectorAll('.category-btn');
         const confirmUploadBtn = document.getElementById('confirmUpload');
         const cancelUploadBtn = document.getElementById('cancelUpload');
+        const fullImageModal = document.getElementById('fullImageModal');
+        const fullImage = document.getElementById('fullImage');
+        const fullImageInfo = document.getElementById('fullImageInfo');
+        const closeFullImage = document.getElementById('closeFullImage');
 
         // API base URL - uses relative path, works when deployed
         const API_BASE = '/api';
@@ -387,7 +474,40 @@
         window.addEventListener('DOMContentLoaded', () => {
             loadImages();
             setupCategoryFilters();
+            setupFullImageModal();
         });
+
+        // Setup full image modal functionality
+        function setupFullImageModal() {
+            closeFullImage.addEventListener('click', () => {
+                hideFullImage();
+            });
+
+            fullImageModal.addEventListener('click', (e) => {
+                if (e.target === fullImageModal) {
+                    hideFullImage();
+                }
+            });
+
+            // Close on Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && fullImageModal.classList.contains('show')) {
+                    hideFullImage();
+                }
+            });
+        }
+
+        function showFullImage(imageUrl, category) {
+            fullImage.src = imageUrl;
+            fullImageInfo.textContent = `Category: ${category}`;
+            fullImageModal.classList.add('show');
+            document.body.style.overflow = 'hidden'; // Prevent scrolling
+        }
+
+        function hideFullImage() {
+            fullImageModal.classList.remove('show');
+            document.body.style.overflow = ''; // Restore scrolling
+        }
 
         // Category filter buttons
         function setupCategoryFilters() {
@@ -516,6 +636,14 @@
             const img = document.createElement('img');
             img.src = imageUrl;
             img.alt = 'Gallery image';
+            img.style.cursor = 'pointer';
+            img.onclick = (e) => {
+                // Prevent triggering when clicking buttons
+                if (e.target !== img && !e.target.closest('.download-btn') && !e.target.closest('.delete-btn')) {
+                    return;
+                }
+                showFullImage(imageUrl, category || 'fun');
+            };
             
             const categoryBadge = document.createElement('div');
             categoryBadge.className = 'category-badge';
@@ -528,15 +656,26 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
             `;
-            downloadBtn.onclick = () => {
+            downloadBtn.onclick = (e) => {
+                e.stopPropagation(); // Prevent triggering image click
                 downloadImage(imageUrl, imageId);
             };
             
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-btn';
             deleteBtn.innerHTML = '×';
-            deleteBtn.onclick = async () => {
+            deleteBtn.onclick = async (e) => {
+                e.stopPropagation(); // Prevent triggering image click
                 await deleteImage(imageId, imageItem);
+            };
+            
+            // Make the image container clickable (not the buttons)
+            imageItem.style.cursor = 'pointer';
+            imageItem.onclick = (e) => {
+                // Only open full image if clicking on the item itself, not buttons
+                if (e.target === img || e.target === imageItem || e.target === categoryBadge) {
+                    showFullImage(imageUrl, category || 'fun');
+                }
             };
             
             imageItem.appendChild(img);
