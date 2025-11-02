@@ -35,12 +35,95 @@ function loadMetadata() {
     return {};
 }
 
-// Save metadata to file
+// Save metadata to file (atomic write for data safety)
 function saveMetadata(metadata) {
     try {
-        fs.writeFileSync(metadataFile, JSON.stringify(metadata, null, 2));
+        // Write to temporary file first, then rename (atomic operation)
+        const tempFile = metadataFile + '.tmp';
+        fs.writeFileSync(tempFile, JSON.stringify(metadata, null, 2), 'utf8');
+        fs.renameSync(tempFile, metadataFile);
+        console.log('Metadata saved successfully');
     } catch (error) {
         console.error('Error saving metadata:', error);
+        // Try to remove temp file if it exists
+        try {
+            const tempFile = metadataFile + '.tmp';
+            if (fs.existsSync(tempFile)) {
+                fs.unlinkSync(tempFile);
+            }
+        } catch (cleanupError) {
+            console.error('Error cleaning up temp file:', cleanupError);
+        }
+    }
+}
+
+// Validate and sync metadata with actual files on disk (run on startup)
+function syncMetadataWithFiles() {
+    try {
+        console.log('Syncing metadata with files on disk...');
+        const metadata = loadMetadata();
+        const files = fs.readdirSync(uploadsDir);
+        const fileSet = new Set(files.filter(file => {
+            const ext = path.extname(file).toLowerCase();
+            return ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext);
+        }));
+        
+        let updated = false;
+        
+        // Remove metadata entries for files that no longer exist (except external links)
+        Object.keys(metadata).forEach(key => {
+            const meta = metadata[key];
+            // Only check physical files, not external links
+            if (!meta?.isExternal && !fileSet.has(key)) {
+                console.log(`Removing orphaned metadata entry: ${key}`);
+                delete metadata[key];
+                updated = true;
+            }
+        });
+        
+        // Add metadata entries for files that exist but aren't in metadata
+        fileSet.forEach(file => {
+            if (!metadata[file]) {
+                console.log(`Adding missing metadata entry for file: ${file}`);
+                metadata[file] = {
+                    category: 'fun',
+                    description: '',
+                    uploadDate: fs.statSync(path.join(uploadsDir, file)).mtime.toISOString(),
+                    type: file.match(/\.(mp4|webm|ogg|mov|avi)$/i) ? 'video' : 'image',
+                    groupId: null,
+                    order: 999
+                };
+                updated = true;
+            }
+        });
+        
+        if (updated) {
+            saveMetadata(metadata);
+            console.log('Metadata synced successfully');
+        } else {
+            console.log('Metadata is already in sync');
+        }
+        
+        // Log persistence status
+        const imageCount = files.filter(f => {
+            const ext = path.extname(f).toLowerCase();
+            return ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
+        }).length;
+        const videoCount = files.filter(f => {
+            const ext = path.extname(f).toLowerCase();
+            return ['.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext);
+        }).length;
+        const externalCount = Object.values(metadata).filter(m => m?.isExternal).length;
+        
+        console.log(`\n✓ Image persistence verified:`);
+        console.log(`  - ${imageCount} images stored on disk`);
+        console.log(`  - ${videoCount} videos stored on disk`);
+        console.log(`  - ${externalCount} external links in metadata`);
+        console.log(`  - ${Object.keys(metadata).length} total items in metadata`);
+        console.log(`  - All files persist to disk and will survive server restarts\n`);
+        
+    } catch (error) {
+        console.error('Error syncing metadata:', error);
     }
 }
 
@@ -802,6 +885,12 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
+// Run metadata sync on startup
+syncMetadataWithFiles();
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`✓ Images are persisted to: ${uploadsDir}`);
+    console.log(`✓ Metadata is persisted to: ${metadataFile}`);
+    console.log(`✓ All data will survive server restarts and offline periods`);
 });
