@@ -801,6 +801,136 @@
             background: rgba(102, 126, 234, 1);
             transform: scale(1.05);
         }
+
+        .storage-bar-container {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin: 20px auto;
+            max-width: 600px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .storage-bar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .storage-bar-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .storage-bar-info {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .storage-bar {
+            width: 100%;
+            height: 12px;
+            background: #e0e0e0;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .storage-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+            border-radius: 6px;
+        }
+
+        .storage-bar-fill.warning {
+            background: linear-gradient(90deg, #ff9800, #f57c00);
+        }
+
+        .storage-bar-fill.danger {
+            background: linear-gradient(90deg, #f44336, #d32f2f);
+        }
+
+        .url-input-container {
+            margin-top: 15px;
+            border-top: 1px solid #e0e0e0;
+            padding-top: 15px;
+        }
+
+        .url-input-toggle {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .url-toggle-btn {
+            background: none;
+            border: none;
+            color: #667eea;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: underline;
+            padding: 5px;
+        }
+
+        .url-toggle-btn:hover {
+            color: #5568d3;
+        }
+
+        .url-input-wrapper {
+            display: none;
+        }
+
+        .url-input-wrapper.show {
+            display: block;
+        }
+
+        .url-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            margin-bottom: 10px;
+        }
+
+        .url-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .url-hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .external-video-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .external-video-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 12px;
+        }
+
+        .external-link-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255, 193, 7, 0.9);
+            color: #333;
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -811,6 +941,15 @@
             <button class="category-btn" data-category="fun">Fun</button>
             <button class="category-btn" data-category="research">Research</button>
             <button class="category-btn" data-category="video">Video</button>
+        </div>
+        <div class="storage-bar-container" id="storageBarContainer">
+            <div class="storage-bar-header">
+                <div class="storage-bar-title">Storage</div>
+                <div class="storage-bar-info" id="storageInfo">Loading...</div>
+            </div>
+            <div class="storage-bar">
+                <div class="storage-bar-fill" id="storageBarFill" style="width: 0%"></div>
+            </div>
         </div>
         <div class="add-button-container">
             <div class="add-button" id="addButton">+</div>
@@ -825,6 +964,17 @@
                     <div class="category-option" data-category="video">Video</div>
                 </div>
                 <textarea class="description-input" id="descriptionInput" placeholder="Add a description for your upload(s)..."></textarea>
+                
+                <div class="url-input-container">
+                    <div class="url-input-toggle">
+                        <button type="button" class="url-toggle-btn" id="toggleUrlInput">Or add YouTube/Google Drive link instead</button>
+                    </div>
+                    <div class="url-input-wrapper" id="urlInputWrapper">
+                        <input type="url" class="url-input" id="urlInput" placeholder="Paste YouTube or Google Drive video link here...">
+                        <div class="url-hint">This saves storage! Videos will be embedded from the link.</div>
+                    </div>
+                </div>
+                
                 <div class="modal-buttons">
                     <button class="modal-btn secondary" id="cancelUpload">Cancel</button>
                     <button class="modal-btn primary" id="confirmUpload" disabled>Upload</button>
@@ -895,6 +1045,12 @@
         const groupModalContent = document.getElementById('groupModalContent');
         const groupInfo = document.getElementById('groupInfo');
         const closeGroupModal = document.getElementById('closeGroupModal');
+        const storageBarContainer = document.getElementById('storageBarContainer');
+        const storageBarFill = document.getElementById('storageBarFill');
+        const storageInfo = document.getElementById('storageInfo');
+        const toggleUrlInput = document.getElementById('toggleUrlInput');
+        const urlInputWrapper = document.getElementById('urlInputWrapper');
+        const urlInput = document.getElementById('urlInput');
 
         // API base URL - uses relative path, works when deployed
         const API_BASE = '/api';
@@ -903,6 +1059,7 @@
         let pendingFiles = [];
         let currentFilter = 'all';
         let activeUploads = new Map();
+        let pendingGroupUploads = [];
 
         // Load images from server on page load
         window.addEventListener('DOMContentLoaded', () => {
@@ -912,7 +1069,123 @@
             setupDragAndDrop();
             setupProgressContainer();
             setupGroupModal();
+            setupStorageBar();
+            setupUrlInput();
         });
+
+        function setupUrlInput() {
+            toggleUrlInput.addEventListener('click', () => {
+                urlInputWrapper.classList.toggle('show');
+                if (urlInputWrapper.classList.contains('show')) {
+                    urlInput.focus();
+                }
+            });
+
+            // Allow uploading external links
+            urlInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && urlInput.value.trim()) {
+                    if (selectedCategory) {
+                        const url = urlInput.value.trim();
+                        const description = descriptionInput.value.trim();
+                        hideUploadModal();
+                        uploadExternalLink(url, selectedCategory, description);
+                        urlInput.value = '';
+                        selectedCategory = null;
+                        descriptionInput.value = '';
+                        urlInputWrapper.classList.remove('show');
+                    }
+                }
+            });
+        }
+
+        async function uploadExternalLink(url, category, description, groupId = null) {
+            try {
+                const response = await fetch(`${API_BASE}/upload-link`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        url: url,
+                        category: category,
+                        description: description,
+                        groupId: groupId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to upload link');
+                }
+
+                const data = await response.json();
+                
+                // If part of a group, reload images to show the complete group
+                if (data.groupId) {
+                    setTimeout(() => {
+                        loadImages();
+                        updateStorageBar();
+                    }, 300);
+                } else {
+                    // Standalone external link
+                    addImageToGallery(
+                        data.id,
+                        data.url,
+                        data.category,
+                        data.description,
+                        data.uploadDate,
+                        data.type || 'video',
+                        false,
+                        [],
+                        null,
+                        true,
+                        data.embedUrl,
+                        data.videoType
+                    );
+                    filterGallery();
+                    updateStorageBar();
+                }
+            } catch (error) {
+                showError('Failed to add link: ' + error.message);
+            }
+        }
+
+        async function setupStorageBar() {
+            updateStorageBar();
+            // Update storage bar every 30 seconds
+            setInterval(updateStorageBar, 30000);
+        }
+
+        async function updateStorageBar() {
+            try {
+                const response = await fetch(`${API_BASE}/storage`);
+                if (!response.ok) {
+                    throw new Error('Failed to load storage info');
+                }
+
+                const data = await response.json();
+                const percentage = parseFloat(data.percentage);
+                
+                // Format storage info
+                const usedMB = (data.used / (1024 * 1024)).toFixed(2);
+                const limitMB = (data.limit / (1024 * 1024)).toFixed(0);
+                const availableMB = (data.available / (1024 * 1024)).toFixed(2);
+                
+                storageInfo.textContent = `${usedMB} MB / ${limitMB} MB used`;
+                
+                // Update progress bar
+                storageBarFill.style.width = percentage + '%';
+                
+                // Change color based on usage
+                storageBarFill.classList.remove('warning', 'danger');
+                if (percentage >= 90) {
+                    storageBarFill.classList.add('danger');
+                } else if (percentage >= 75) {
+                    storageBarFill.classList.add('warning');
+                }
+            } catch (error) {
+                console.error('Failed to update storage bar:', error);
+            }
+        }
 
         function setupDragAndDropReordering(wrapper, groupId) {
             wrapper.draggable = false; // Disable dragging the wrapper itself
@@ -1012,7 +1285,27 @@
                         mediaContainer.style.width = '100%';
                         mediaContainer.style.height = '100%';
                         
-                        if (file.type === 'video') {
+                        if (file.isExternal && file.embedUrl) {
+                            // External video (YouTube/Google Drive)
+                            const externalContainer = document.createElement('div');
+                            externalContainer.className = 'external-video-container';
+                            const iframe = document.createElement('iframe');
+                            iframe.src = file.embedUrl;
+                            iframe.allowFullscreen = true;
+                            iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                            externalContainer.appendChild(iframe);
+                            
+                            const externalBadge = document.createElement('div');
+                            externalBadge.className = 'external-link-badge';
+                            externalBadge.textContent = file.videoType === 'youtube' ? 'YouTube' : 'Drive';
+                            externalContainer.appendChild(externalBadge);
+                            
+                            externalContainer.onclick = () => {
+                                showFullExternalVideo(file.embedUrl, category, description, uploadDate, file.videoType);
+                                hideGroupModal();
+                            };
+                            mediaContainer.appendChild(externalContainer);
+                        } else if (file.type === 'video') {
                             const video = document.createElement('video');
                             video.src = file.url;
                             video.controls = true;
@@ -1302,6 +1595,34 @@
             document.body.style.overflow = ''; // Restore scrolling
         }
 
+        function showFullExternalVideo(embedUrl, category, description, uploadDate, videoType) {
+            fullImage.style.display = 'none';
+            const videoExists = fullImageContainer.querySelector('iframe');
+            
+            if (!videoExists) {
+                const iframe = document.createElement('iframe');
+                iframe.src = embedUrl;
+                iframe.style.maxWidth = '100%';
+                iframe.style.maxHeight = '90vh';
+                iframe.style.width = '800px';
+                iframe.style.height = '450px';
+                iframe.allowFullscreen = true;
+                iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                fullImageContainer.insertBefore(iframe, fullImageInfo);
+            } else {
+                videoExists.src = embedUrl;
+            }
+            
+            fullImageInfo.innerHTML = `
+                <div>Category: <strong>${category}</strong></div>
+                <div>Source: <strong>${videoType === 'youtube' ? 'YouTube' : 'Google Drive'}</strong></div>
+                ${uploadDate ? `<div style="margin-top: 5px; font-size: 12px;">Uploaded: ${formatDate(uploadDate)}</div>` : ''}
+                ${description ? `<div class="full-image-description">${description}</div>` : ''}
+            `;
+            fullImageModal.classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+
         // Category filter buttons
         function setupCategoryFilters() {
             categoryButtons.forEach(btn => {
@@ -1365,21 +1686,53 @@
                 categoryOptions.forEach(opt => opt.classList.remove('selected'));
                 option.classList.add('selected');
                 selectedCategory = option.dataset.category;
-                confirmUploadBtn.disabled = false;
+                // Enable upload if category selected and (files pending OR URL provided)
+                confirmUploadBtn.disabled = !(pendingFiles.length > 0 || urlInput.value.trim());
             });
         });
 
+        // Enable upload button when URL is entered
+        urlInput.addEventListener('input', () => {
+            if (selectedCategory && urlInput.value.trim()) {
+                confirmUploadBtn.disabled = false;
+            } else if (pendingFiles.length === 0) {
+                confirmUploadBtn.disabled = true;
+            }
+        });
+
         confirmUploadBtn.addEventListener('click', () => {
-            if (selectedCategory && pendingFiles.length > 0) {
+            if (selectedCategory) {
                 const description = descriptionInput.value.trim();
-                hideUploadModal();
+                const url = urlInput.value.trim();
                 
-                // Upload all files together with same category and description
-                uploadBatch(pendingFiles, selectedCategory, description);
-                
-                pendingFiles = [];
-                selectedCategory = null;
-                descriptionInput.value = '';
+                // Check if URL is provided
+                if (url) {
+                    hideUploadModal();
+                    // Generate groupId if files are being uploaded together
+                    const groupId = pendingFiles.length > 0 ? 'group-' + Date.now() + '-' + Math.random() : null;
+                    
+                    // If there are files, upload them first, then the URL
+                    if (pendingFiles.length > 0) {
+                        // Store the URL and groupId for after file uploads
+                        window.pendingUrlUpload = { url, category, description, groupId };
+                        uploadBatch(pendingFiles, selectedCategory, description, groupId);
+                    } else {
+                        // Just upload the URL standalone
+                        uploadExternalLink(url, selectedCategory, description, null);
+                    }
+                    
+                    urlInput.value = '';
+                    selectedCategory = null;
+                    descriptionInput.value = '';
+                    urlInputWrapper.classList.remove('show');
+                } else if (pendingFiles.length > 0) {
+                    hideUploadModal();
+                    // Upload all files together with same category and description
+                    uploadBatch(pendingFiles, selectedCategory, description);
+                    pendingFiles = [];
+                    selectedCategory = null;
+                    descriptionInput.value = '';
+                }
             }
         });
 
@@ -1388,6 +1741,8 @@
             pendingFiles = [];
             selectedCategory = null;
             descriptionInput.value = '';
+            urlInput.value = '';
+            urlInputWrapper.classList.remove('show');
         });
 
         function showUploadModal() {
@@ -1395,18 +1750,20 @@
             categoryOptions.forEach(opt => opt.classList.remove('selected'));
             confirmUploadBtn.disabled = true;
             descriptionInput.value = '';
+            urlInput.value = '';
+            urlInputWrapper.classList.remove('show');
         }
 
         function hideUploadModal() {
             uploadModal.classList.remove('show');
         }
 
-        async function uploadBatch(files, category, description) {
+        async function uploadBatch(files, category, description, providedGroupId = null) {
             uploadProgressContainer.classList.add('show');
             uploadProgressList.innerHTML = '';
             
-            // Create a group if multiple files
-            const groupId = files.length > 1 ? 'group-' + Date.now() + '-' + Math.random() : null;
+            // Create a group if multiple files or if groupId is provided
+            const groupId = providedGroupId || (files.length > 1 ? 'group-' + Date.now() + '-' + Math.random() : null);
             
             // Create progress items for each file
             files.forEach(file => {
@@ -1475,6 +1832,7 @@
                 formData.append('groupId', groupId);
             }
 
+            activeUploads.set(uploadId, { file, groupId });
             updateStatus(uploadId, 'Uploading...');
             
             try {
@@ -1489,13 +1847,27 @@
 
                 const data = await response.json();
                 updateStatus(uploadId, 'Complete!', true);
+                activeUploads.delete(uploadId);
                 
-                // Only add to gallery if it's a single file or the first file in a group
-                // For groups, we'll refresh the gallery after all uploads complete
-                if (!groupId || uploadProgressList.querySelectorAll('.upload-item').length === 1) {
-                    // Refresh gallery to load the group
+                // Check if all uploads are complete and if there's a pending URL upload
+                if (activeUploads.size === 0 && window.pendingUrlUpload && window.pendingUrlUpload.groupId === groupId) {
+                    // All files uploaded, now upload the URL
+                    const urlUpload = window.pendingUrlUpload;
+                    delete window.pendingUrlUpload;
+                    
+                    // Upload the external link with the same groupId
+                    uploadExternalLink(urlUpload.url, urlUpload.category, urlUpload.description, urlUpload.groupId).then(() => {
+                        // Reload images to show the complete group
+                        setTimeout(() => {
+                            loadImages();
+                            updateStorageBar();
+                        }, 500);
+                    });
+                } else if (activeUploads.size === 0) {
+                    // All uploads complete - refresh gallery to show groups or new items
                     setTimeout(() => {
                         loadImages();
+                        updateStorageBar();
                     }, 500);
                 }
                 
@@ -1510,11 +1882,10 @@
                     // Hide progress container if no more uploads
                     if (uploadProgressList.children.length === 0) {
                         uploadProgressContainer.classList.remove('show');
-                        // Refresh gallery one more time to ensure groups are displayed
-                        loadImages();
                     }
                 }, 2000);
             } catch (error) {
+                activeUploads.delete(uploadId);
                 updateStatus(uploadId, 'Failed!', false);
                 showError('Failed to upload ' + file.name + ': ' + error.message);
             }
@@ -1537,7 +1908,7 @@
             }
         }
 
-        function addImageToGallery(imageId, imageUrl, category, description = '', uploadDate = null, type = 'image', isGroup = false, files = [], groupId = null) {
+        function addImageToGallery(imageId, imageUrl, category, description = '', uploadDate = null, type = 'image', isGroup = false, files = [], groupId = null, isExternal = false, embedUrl = null, videoType = null) {
             // Check if image already exists
             const existingItem = gallery.querySelector(`[data-id="${imageId}"]`);
             if (existingItem) return;
@@ -1572,9 +1943,25 @@
                 imageItem.setAttribute('data-group-id', groupId);
             }
             
-            // Create media element (image or video)
+            // Create media element (image, video, or external video)
             let mediaElement;
-            if (type === 'video') {
+            if (isExternal && embedUrl) {
+                // External video (YouTube/Google Drive)
+                const externalContainer = document.createElement('div');
+                externalContainer.className = 'external-video-container';
+                const iframe = document.createElement('iframe');
+                iframe.src = embedUrl;
+                iframe.allowFullscreen = true;
+                iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                externalContainer.appendChild(iframe);
+                
+                const externalBadge = document.createElement('div');
+                externalBadge.className = 'external-link-badge';
+                externalBadge.textContent = videoType === 'youtube' ? 'YouTube' : 'Drive';
+                externalContainer.appendChild(externalBadge);
+                
+                mediaElement = externalContainer;
+            } else if (type === 'video') {
                 mediaElement = document.createElement('video');
                 mediaElement.src = imageUrl;
                 mediaElement.preload = 'metadata';
@@ -1593,7 +1980,9 @@
                 mediaElement.src = imageUrl;
                 mediaElement.alt = 'Gallery image';
             }
-            mediaElement.style.cursor = 'pointer';
+            if (mediaElement.style) {
+                mediaElement.style.cursor = 'pointer';
+            }
             
             const categoryBadge = document.createElement('div');
             categoryBadge.className = 'category-badge';
@@ -1607,8 +1996,8 @@
                 imageItem.appendChild(groupBadge);
             }
             
-            // Add video indicator for videos
-            if (type === 'video') {
+            // Add video indicator for videos (not for external videos)
+            if (type === 'video' && !isExternal) {
                 const videoIndicator = document.createElement('div');
                 videoIndicator.className = 'video-indicator';
                 videoIndicator.innerHTML = '▶';
@@ -1628,7 +2017,10 @@
             `;
             downloadBtn.onclick = (e) => {
                 e.stopPropagation();
-                if (isGroup && groupId) {
+                if (isExternal) {
+                    // Open external link in new tab
+                    window.open(imageUrl, '_blank');
+                } else if (isGroup && groupId) {
                     downloadGroup(groupId);
                 } else {
                     downloadImage(imageUrl, imageId);
@@ -1647,19 +2039,24 @@
                 }
             };
             
-            // Make the image container clickable
-            imageItem.style.cursor = 'pointer';
-            imageItem.onclick = (e) => {
-                if (e.target !== downloadBtn && e.target !== deleteBtn && !e.target.closest('.download-btn') && !e.target.closest('.delete-btn') && e.target !== mediaElement) {
-                    if (isGroup && groupId) {
-                        // Show group modal
-                        showGroupModal(groupId, category || 'fun', description, uploadDate || new Date().toISOString());
-                    } else {
-                        // Show full image/video
-                        showFullImage(imageUrl, category || 'fun', description, uploadDate || new Date().toISOString(), type || 'image');
+            // Make the image container clickable (not for external videos with iframes)
+            if (!isExternal || !embedUrl) {
+                imageItem.style.cursor = 'pointer';
+                imageItem.onclick = (e) => {
+                    if (e.target !== downloadBtn && e.target !== deleteBtn && !e.target.closest('.download-btn') && !e.target.closest('.delete-btn') && e.target !== mediaElement && !e.target.closest('iframe')) {
+                        if (isGroup && groupId) {
+                            // Show group modal
+                            showGroupModal(groupId, category || 'fun', description, uploadDate || new Date().toISOString());
+                        } else if (isExternal && embedUrl) {
+                            // For external videos, show in full screen modal
+                            showFullExternalVideo(embedUrl, category || 'fun', description, uploadDate || new Date().toISOString(), videoType);
+                        } else {
+                            // Show full image/video
+                            showFullImage(imageUrl, category || 'fun', description, uploadDate || new Date().toISOString(), type || 'image');
+                        }
                     }
-                }
-            };
+                };
+            }
             
             imageItem.appendChild(mediaElement);
             imageItem.appendChild(categoryBadge);
@@ -1809,10 +2206,16 @@
                             image.type || 'image',
                             image.isGroup || false,
                             image.files || [],
-                            image.id
+                            image.id,
+                            image.isExternal || false,
+                            image.embedUrl || null,
+                            image.videoType || null
                         );
                     });
                 }
+                
+                // Update storage bar after loading
+                updateStorageBar();
                 
                 filterGallery();
             } catch (error) {

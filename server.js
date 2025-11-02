@@ -91,6 +91,58 @@ app.get('/api/images', (req, res) => {
         const groups = {};
         const individualFiles = [];
         
+        // Also check metadata for external links (not in filesystem)
+        Object.keys(metadata).forEach(linkId => {
+            const fileMeta = metadata[linkId];
+            if (fileMeta?.isExternal) {
+                // This is an external link, treat it as a file
+                const ext = '.link'; // Dummy extension for external links
+                const item = {
+                    id: linkId,
+                    url: fileMeta.embedUrl || fileMeta.externalUrl,
+                    filename: linkId,
+                    category: fileMeta?.category || 'fun',
+                    description: fileMeta?.description || '',
+                    uploadDate: fileMeta?.uploadDate || new Date().toISOString(),
+                    type: fileMeta?.type || 'video',
+                    isExternal: true,
+                    externalUrl: fileMeta.externalUrl,
+                    embedUrl: fileMeta.embedUrl,
+                    videoType: fileMeta.videoType,
+                    order: fileMeta?.order !== undefined ? fileMeta.order : 999,
+                    isGroup: !!fileMeta?.groupId,
+                    groupId: fileMeta?.groupId || null
+                };
+                
+                if (fileMeta?.groupId) {
+                    if (!groups[fileMeta.groupId]) {
+                        groups[fileMeta.groupId] = {
+                            id: fileMeta.groupId,
+                            files: [],
+                            category: fileMeta.category || 'fun',
+                            description: fileMeta.description || '',
+                            uploadDate: fileMeta.uploadDate || new Date().toISOString(),
+                            titleImage: null,
+                            titleImageId: null
+                        };
+                    }
+                    groups[fileMeta.groupId].files.push({
+                        id: linkId,
+                        url: fileMeta.embedUrl || fileMeta.externalUrl,
+                        filename: linkId,
+                        type: 'video',
+                        order: fileMeta?.order !== undefined ? fileMeta.order : 999,
+                        isExternal: true,
+                        externalUrl: fileMeta.externalUrl,
+                        embedUrl: fileMeta.embedUrl,
+                        videoType: fileMeta.videoType
+                    });
+                } else {
+                    individualFiles.push(item);
+                }
+            }
+        });
+        
         mediaFiles.forEach(file => {
             const fileMeta = metadata[file];
             if (fileMeta?.groupId) {
@@ -283,9 +335,27 @@ app.get('/api/groups/:groupId', (req, res) => {
                         id: file,
                         url: `/uploads/${file}`,
                         filename: file,
-                        type: fileMeta.type || 'image'
+                        type: fileMeta.type || 'image',
+                        isExternal: false
                     });
                 }
+            }
+        });
+        
+        // Get external links in the group
+        Object.keys(metadata).forEach(linkId => {
+            const fileMeta = metadata[linkId];
+            if (fileMeta?.isExternal && fileMeta?.groupId === groupId) {
+                groupFiles.push({
+                    id: linkId,
+                    url: fileMeta.embedUrl || fileMeta.externalUrl,
+                    filename: linkId,
+                    type: 'video',
+                    isExternal: true,
+                    externalUrl: fileMeta.externalUrl,
+                    embedUrl: fileMeta.embedUrl,
+                    videoType: fileMeta.videoType
+                });
             }
         });
         
@@ -349,22 +419,39 @@ app.put('/api/groups/:groupId/title', (req, res) => {
         const metadata = loadMetadata();
         const filePath = path.join(uploadsDir, titleImageId);
         
-        // Verify file exists and belongs to the group
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ error: 'File not found' });
+        // Verify file exists (for physical files) or is external link and belongs to the group
+        if (titleImageId.startsWith('link-')) {
+            // External link - check if it exists in metadata
+            const fileMeta = metadata[titleImageId];
+            if (!fileMeta || !fileMeta.isExternal || fileMeta.groupId !== groupId) {
+                return res.status(404).json({ error: 'Link not found or does not belong to group' });
+            }
+        } else {
+            // Physical file
+            if (!fs.existsSync(filePath)) {
+                return res.status(404).json({ error: 'File not found' });
+            }
         }
         
         const fileMeta = metadata[titleImageId];
         if (!fileMeta || fileMeta.groupId !== groupId) {
-            return res.status(400).json({ error: 'File does not belong to this group' });
+            return res.status(400).json({ error: 'File/Link does not belong to this group' });
         }
         
-        // Update title image for all files in the group
+        // Update title image for all files in the group (both physical files and external links)
         const files = fs.readdirSync(uploadsDir);
         files.forEach(file => {
             const meta = metadata[file];
             if (meta?.groupId === groupId) {
-                meta.titleImageId = titleImageId;
+                metadata[file].titleImageId = titleImageId;
+            }
+        });
+        
+        // Also update external links
+        Object.keys(metadata).forEach(linkId => {
+            const fileMeta = metadata[linkId];
+            if (fileMeta?.isExternal && fileMeta?.groupId === groupId) {
+                metadata[linkId].titleImageId = titleImageId;
             }
         });
         
@@ -387,14 +474,25 @@ app.put('/api/groups/:groupId/order', (req, res) => {
         
         const metadata = loadMetadata();
         
-        // Update order for all files in the group
+        // Update order for all files in the group (both physical files and external links)
         const files = fs.readdirSync(uploadsDir);
         files.forEach(file => {
             const meta = metadata[file];
             if (meta?.groupId === groupId) {
                 const orderIndex = fileOrder.indexOf(file);
                 if (orderIndex !== -1) {
-                    meta.order = orderIndex;
+                    metadata[file].order = orderIndex;
+                }
+            }
+        });
+        
+        // Also update external links
+        Object.keys(metadata).forEach(linkId => {
+            const fileMeta = metadata[linkId];
+            if (fileMeta?.isExternal && fileMeta?.groupId === groupId) {
+                const orderIndex = fileOrder.indexOf(linkId);
+                if (orderIndex !== -1) {
+                    metadata[linkId].order = orderIndex;
                 }
             }
         });
@@ -406,15 +504,16 @@ app.put('/api/groups/:groupId/order', (req, res) => {
     }
 });
 
-// Download group as zip
+        // Download group as zip
 app.get('/api/groups/:groupId/download', (req, res) => {
     try {
         const groupId = req.params.groupId;
         const metadata = loadMetadata();
         const files = fs.readdirSync(uploadsDir);
         const groupFiles = [];
+        const externalLinks = [];
         
-        // Get all files in the group
+        // Get all files in the group (both uploaded and external)
         files.forEach(file => {
             const fileMeta = metadata[file];
             if (fileMeta?.groupId === groupId) {
@@ -424,28 +523,46 @@ app.get('/api/groups/:groupId/download', (req, res) => {
                         id: file,
                         path: path.join(uploadsDir, file),
                         filename: file,
-                        order: fileMeta?.order !== undefined ? fileMeta.order : 999 // Default to end if no order
+                        order: fileMeta?.order !== undefined ? fileMeta.order : 999
                     });
                 }
             }
         });
         
-        if (groupFiles.length === 0) {
+        // Also check for external links in the group
+        Object.keys(metadata).forEach(linkId => {
+            const fileMeta = metadata[linkId];
+            if (fileMeta?.isExternal && fileMeta?.groupId === groupId) {
+                externalLinks.push({
+                    id: linkId,
+                    url: fileMeta.externalUrl,
+                    embedUrl: fileMeta.embedUrl,
+                    order: fileMeta?.order !== undefined ? fileMeta.order : 999
+                });
+            }
+        });
+        
+        if (groupFiles.length === 0 && externalLinks.length === 0) {
             return res.status(404).json({ error: 'Group not found' });
         }
         
-        // Sort by order, then by original filename as fallback
-        groupFiles.sort((a, b) => {
+        // Combine and sort all files by order
+        const allItems = [...groupFiles, ...externalLinks].sort((a, b) => {
             if (a.order !== b.order) {
                 return a.order - b.order;
             }
-            return a.filename.localeCompare(b.filename);
+            return a.id.localeCompare(b.id);
         });
         
         // Get description for zip filename
-        const firstFile = groupFiles[0];
-        const fileMeta = metadata[firstFile.id];
-        const description = fileMeta?.description || 'group';
+        let firstFileMeta = null;
+        if (groupFiles.length > 0) {
+            firstFileMeta = metadata[groupFiles[0].id];
+        } else if (externalLinks.length > 0) {
+            firstFileMeta = metadata[externalLinks[0].id];
+        }
+        
+        const description = firstFileMeta?.description || 'group';
         const zipFilename = description.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'group';
         
         // Create zip file
@@ -454,10 +571,20 @@ app.get('/api/groups/:groupId/download', (req, res) => {
         archive.pipe(res);
         
         // Add files with numbered names based on order
-        groupFiles.forEach((file, index) => {
-            const ext = path.extname(file.filename);
-            const numberedName = `${index + 1}${ext}`;
-            archive.file(file.path, { name: numberedName });
+        let fileIndex = 0;
+        allItems.forEach((item) => {
+            if (item.path) {
+                // Physical file
+                const ext = path.extname(item.filename);
+                const numberedName = `${fileIndex + 1}${ext}`;
+                archive.file(item.path, { name: numberedName });
+                fileIndex++;
+            } else if (item.url) {
+                // External link - create a text file with the URL
+                const linkName = `${fileIndex + 1}_external_link.txt`;
+                archive.append(`External Video Link:\n${item.url}\n\nEmbed URL:\n${item.embedUrl || item.url}`, { name: linkName });
+                fileIndex++;
+            }
         });
         
         archive.finalize();
@@ -479,6 +606,7 @@ app.delete('/api/images/:id', (req, res) => {
             const files = fs.readdirSync(uploadsDir);
             let deletedCount = 0;
             
+            // Delete physical files
             files.forEach(file => {
                 const fileMeta = metadata[file];
                 if (fileMeta?.groupId === groupId) {
@@ -491,8 +619,26 @@ app.delete('/api/images/:id', (req, res) => {
                 }
             });
             
+            // Delete external links
+            Object.keys(metadata).forEach(linkId => {
+                const fileMeta = metadata[linkId];
+                if (fileMeta?.isExternal && fileMeta?.groupId === groupId) {
+                    delete metadata[linkId];
+                    deletedCount++;
+                }
+            });
+            
             saveMetadata(metadata);
-            res.json({ message: `Group deleted successfully (${deletedCount} files)` });
+            res.json({ message: `Group deleted successfully (${deletedCount} items)` });
+        } else if (itemId.startsWith('link-')) {
+            // Delete external link
+            if (metadata[itemId]) {
+                delete metadata[itemId];
+                saveMetadata(metadata);
+                res.json({ message: 'Link deleted successfully' });
+            } else {
+                res.status(404).json({ error: 'Link not found' });
+            }
         } else {
             // Delete single file
             const imagePath = path.join(uploadsDir, itemId);
@@ -514,6 +660,140 @@ app.delete('/api/images/:id', (req, res) => {
         }
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete' });
+    }
+});
+
+// Get storage usage
+app.get('/api/storage', (req, res) => {
+    try {
+        const files = fs.readdirSync(uploadsDir);
+        let totalSize = 0;
+        
+        files.forEach(file => {
+            const filePath = path.join(uploadsDir, file);
+            try {
+                const stats = fs.statSync(filePath);
+                if (stats.isFile()) {
+                    totalSize += stats.size;
+                }
+            } catch (error) {
+                // Skip files that can't be read
+            }
+        });
+        
+        // Storage limit: 500MB (524288000 bytes) for free tier
+        const storageLimit = 500 * 1024 * 1024; // 500MB
+        const used = totalSize;
+        const available = Math.max(0, storageLimit - used);
+        const percentage = (used / storageLimit) * 100;
+        
+        res.json({
+            used: used,
+            available: available,
+            limit: storageLimit,
+            percentage: Math.min(100, percentage.toFixed(2))
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to calculate storage' });
+    }
+});
+
+// Upload external video link (YouTube/Google Drive)
+app.post('/api/upload-link', (req, res) => {
+    try {
+        const { url, category, description, groupId } = req.body;
+        
+        if (!url) {
+            return res.status(400).json({ error: 'URL is required' });
+        }
+        
+        // Validate URL
+        let videoType = 'unknown';
+        let embedUrl = url;
+        
+        // YouTube URL handling
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+            videoType = 'youtube';
+            // Extract video ID
+            let videoId = null;
+            if (url.includes('youtube.com/watch?v=')) {
+                videoId = url.split('v=')[1]?.split('&')[0];
+            } else if (url.includes('youtu.be/')) {
+                videoId = url.split('youtu.be/')[1]?.split('?')[0];
+            }
+            
+            if (videoId) {
+                embedUrl = `https://www.youtube.com/embed/${videoId}`;
+            }
+        } 
+        // Google Drive URL handling
+        else if (url.includes('drive.google.com')) {
+            videoType = 'googledrive';
+            // Extract file ID from Google Drive URL
+            let fileId = null;
+            if (url.includes('/file/d/')) {
+                fileId = url.split('/file/d/')[1]?.split('/')[0];
+            }
+            
+            if (fileId) {
+                embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+            }
+        }
+        
+        const uploadDate = new Date().toISOString();
+        const linkId = 'link-' + Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const originalFilename = url;
+        
+        // Extract order from URL if it has a number
+        let order = extractOrderFromFilename(originalFilename);
+        if (order === null && groupId) {
+            const metadata = loadMetadata();
+            const files = fs.readdirSync(uploadsDir);
+            let maxOrder = -1;
+            files.forEach(file => {
+                const fileMeta = metadata[file];
+                if (fileMeta?.groupId === groupId && fileMeta.order !== undefined) {
+                    maxOrder = Math.max(maxOrder, fileMeta.order);
+                }
+            });
+            order = maxOrder + 1;
+        } else if (order === null) {
+            order = 999;
+        }
+        
+        // Save metadata for external link
+        const metadata = loadMetadata();
+        metadata[linkId] = {
+            category: category || 'fun',
+            description: description || '',
+            uploadDate: uploadDate,
+            type: 'video',
+            groupId: groupId,
+            order: order,
+            isExternal: true,
+            externalUrl: url,
+            embedUrl: embedUrl,
+            videoType: videoType
+        };
+        saveMetadata(metadata);
+        
+        res.json({
+            id: linkId,
+            url: embedUrl,
+            filename: linkId,
+            category: category || 'fun',
+            description: description || '',
+            uploadDate: uploadDate,
+            type: 'video',
+            groupId: groupId,
+            order: order,
+            isExternal: true,
+            externalUrl: url,
+            embedUrl: embedUrl,
+            videoType: videoType
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to save link' });
     }
 });
 
