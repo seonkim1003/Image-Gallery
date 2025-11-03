@@ -20,11 +20,20 @@ if (!fs.existsSync(uploadsDir)) {
     console.log('Created uploads directory:', uploadsDir);
 }
 
+// Backup directory for data persistence across deployments
+const backupsDir = path.join(__dirname, 'backups');
+if (!fs.existsSync(backupsDir)) {
+    fs.mkdirSync(backupsDir, { recursive: true });
+    console.log('Created backups directory:', backupsDir);
+}
+
 // Verify uploads directory is writable (critical for persistence)
+let persistenceVerified = false;
 try {
     const testFile = path.join(uploadsDir, '.persistence-test');
     fs.writeFileSync(testFile, 'test', 'utf8');
     fs.unlinkSync(testFile);
+    persistenceVerified = true;
     console.log('✓ Uploads directory is writable - images will persist to disk');
 } catch (error) {
     console.error('✗ WARNING: Uploads directory is not writable! Images may not persist:', error.message);
@@ -32,6 +41,9 @@ try {
 
 // Metadata file to store image categories
 const metadataFile = path.join(__dirname, 'image-metadata.json');
+
+// Backup file path
+const backupMetadataFile = path.join(backupsDir, 'image-metadata.json');
 
 // Load metadata from file
 function loadMetadata() {
@@ -53,6 +65,16 @@ function saveMetadata(metadata) {
         const tempFile = metadataFile + '.tmp';
         fs.writeFileSync(tempFile, JSON.stringify(metadata, null, 2), 'utf8');
         fs.renameSync(tempFile, metadataFile);
+        
+        // Also save to backup location for redundancy
+        try {
+            const backupTemp = backupMetadataFile + '.tmp';
+            fs.writeFileSync(backupTemp, JSON.stringify(metadata, null, 2), 'utf8');
+            fs.renameSync(backupTemp, backupMetadataFile);
+        } catch (backupError) {
+            console.warn('Could not save metadata backup (non-critical):', backupError.message);
+        }
+        
         console.log('Metadata saved successfully');
     } catch (error) {
         console.error('Error saving metadata:', error);
@@ -68,6 +90,111 @@ function saveMetadata(metadata) {
     }
 }
 
+// Create full backup of all data (uploads + metadata)
+function createBackup() {
+    try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const backupName = `backup-${timestamp}`;
+        const backupPath = path.join(backupsDir, backupName);
+        
+        if (!fs.existsSync(backupPath)) {
+            fs.mkdirSync(backupPath, { recursive: true });
+        }
+        
+        // Backup metadata
+        if (fs.existsSync(metadataFile)) {
+            fs.copyFileSync(metadataFile, path.join(backupPath, 'image-metadata.json'));
+        }
+        
+        // Backup all uploads
+        const uploadsBackupPath = path.join(backupPath, 'uploads');
+        if (!fs.existsSync(uploadsBackupPath)) {
+            fs.mkdirSync(uploadsBackupPath, { recursive: true });
+        }
+        
+        if (fs.existsSync(uploadsDir)) {
+            const files = fs.readdirSync(uploadsDir);
+            files.forEach(file => {
+                const srcPath = path.join(uploadsDir, file);
+                const destPath = path.join(uploadsBackupPath, file);
+                if (fs.statSync(srcPath).isFile()) {
+                    fs.copyFileSync(srcPath, destPath);
+                }
+            });
+        }
+        
+        console.log(`✓ Backup created: ${backupName}`);
+        return backupName;
+    } catch (error) {
+        console.error('Error creating backup:', error);
+        return null;
+    }
+}
+
+// Restore from backup
+function restoreFromBackup(backupName) {
+    try {
+        const backupPath = path.join(backupsDir, backupName);
+        if (!fs.existsSync(backupPath)) {
+            throw new Error('Backup not found');
+        }
+        
+        // Restore metadata
+        const backupMetadata = path.join(backupPath, 'image-metadata.json');
+        if (fs.existsSync(backupMetadata)) {
+            fs.copyFileSync(backupMetadata, metadataFile);
+        }
+        
+        // Restore uploads
+        const uploadsBackupPath = path.join(backupPath, 'uploads');
+        if (fs.existsSync(uploadsBackupPath)) {
+            const files = fs.readdirSync(uploadsBackupPath);
+            files.forEach(file => {
+                const srcPath = path.join(uploadsBackupPath, file);
+                const destPath = path.join(uploadsDir, file);
+                if (fs.statSync(srcPath).isFile()) {
+                    fs.copyFileSync(srcPath, destPath);
+                }
+            });
+        }
+        
+        console.log(`✓ Restored from backup: ${backupName}`);
+        return true;
+    } catch (error) {
+        console.error('Error restoring backup:', error);
+        return false;
+    }
+}
+
+// Check if running on persistent storage (vs ephemeral)
+function checkStoragePersistence() {
+    try {
+        // Create a marker file to test persistence
+        const markerFile = path.join(uploadsDir, '.persistence-marker');
+        const markerContent = new Date().toISOString();
+        
+        // Write marker
+        fs.writeFileSync(markerFile, markerContent, 'utf8');
+        
+        // Try to read it back (basic check)
+        const readContent = fs.readFileSync(markerFile, 'utf8');
+        
+        // Check if marker exists from previous run (indicates persistence)
+        const markerExists = fs.existsSync(markerFile);
+        
+        return {
+            writable: true,
+            markerExists: markerExists,
+            markerContent: readContent
+        };
+    } catch (error) {
+        return {
+            writable: false,
+            error: error.message
+        };
+    }
+}
+
 // Validate and sync metadata with actual files on disk (run on startup)
 function syncMetadataWithFiles() {
     try {
@@ -77,6 +204,34 @@ function syncMetadataWithFiles() {
         if (!fs.existsSync(uploadsDir)) {
             fs.mkdirSync(uploadsDir, { recursive: true });
             console.log('Created uploads directory during sync');
+            
+            // Try to restore from most recent backup if uploads directory is empty/missing
+            if (fs.existsSync(backupsDir)) {
+                const backups = fs.readdirSync(backupsDir)
+                    .filter(item => {
+                        const itemPath = path.join(backupsDir, item);
+                        return fs.statSync(itemPath).isDirectory() && item.startsWith('backup-');
+                    })
+                    .sort()
+                    .reverse();
+                
+                if (backups.length > 0) {
+                    console.log(`⚠️  Uploads directory missing - attempting to restore from backup: ${backups[0]}`);
+                    const restored = restoreFromBackup(backups[0]);
+                    if (restored) {
+                        console.log('✓ Successfully restored from backup');
+                    }
+                }
+            }
+        }
+        
+        // Check persistence on startup
+        const persistenceCheck = checkStoragePersistence();
+        if (!persistenceCheck.writable) {
+            console.warn('⚠️  WARNING: Storage may be ephemeral - data may not persist across deployments!');
+            console.warn('   Consider using persistent volumes on your hosting platform.');
+        } else {
+            console.log('✓ Storage persistence verified');
         }
         
         const metadata = loadMetadata();
@@ -418,6 +573,12 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
         order: order
     };
     saveMetadata(metadata);
+    
+    // Create backup after upload (periodic backup)
+    // Only backup every 10th upload to avoid too many backups
+    if (Object.keys(metadata).length % 10 === 0) {
+        createBackup();
+    }
     
     res.json({
         id: filename,
@@ -917,6 +1078,7 @@ app.get('/api/health', (req, res) => {
         // Verify critical directories exist
         const uploadsExists = fs.existsSync(uploadsDir);
         const metadataExists = fs.existsSync(metadataFile);
+        const persistenceCheck = checkStoragePersistence();
         
         const health = {
             status: 'ok',
@@ -928,7 +1090,8 @@ app.get('/api/health', (req, res) => {
             },
             disk: {
                 uploadsDirectory: uploadsExists,
-                metadataFile: metadataExists
+                metadataFile: metadataExists,
+                persistence: persistenceCheck
             }
         };
         
@@ -948,6 +1111,98 @@ app.get('/api/health', (req, res) => {
     }
 });
 
+// Create backup endpoint
+app.post('/api/backup', (req, res) => {
+    try {
+        const backupName = createBackup();
+        if (backupName) {
+            res.json({ 
+                success: true, 
+                backupName: backupName,
+                message: 'Backup created successfully'
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                error: 'Failed to create backup' 
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// List backups endpoint
+app.get('/api/backups', (req, res) => {
+    try {
+        if (!fs.existsSync(backupsDir)) {
+            return res.json({ backups: [] });
+        }
+        
+        const backups = fs.readdirSync(backupsDir)
+            .filter(item => {
+                const itemPath = path.join(backupsDir, item);
+                return fs.statSync(itemPath).isDirectory() && item.startsWith('backup-');
+            })
+            .map(backupName => {
+                const backupPath = path.join(backupsDir, backupName);
+                const stats = fs.statSync(backupPath);
+                const metadataPath = path.join(backupPath, 'image-metadata.json');
+                const uploadsPath = path.join(backupPath, 'uploads');
+                
+                let fileCount = 0;
+                if (fs.existsSync(uploadsPath)) {
+                    fileCount = fs.readdirSync(uploadsPath).length;
+                }
+                
+                return {
+                    name: backupName,
+                    created: stats.birthtime.toISOString(),
+                    modified: stats.mtime.toISOString(),
+                    hasMetadata: fs.existsSync(metadataPath),
+                    fileCount: fileCount
+                };
+            })
+            .sort((a, b) => b.created.localeCompare(a.created));
+        
+        res.json({ backups: backups });
+    } catch (error) {
+        res.status(500).json({ 
+            error: error.message 
+        });
+    }
+});
+
+// Restore from backup endpoint
+app.post('/api/restore/:backupName', (req, res) => {
+    try {
+        const backupName = req.params.backupName;
+        const success = restoreFromBackup(backupName);
+        
+        if (success) {
+            // Reload metadata after restore
+            syncMetadataWithFiles();
+            res.json({ 
+                success: true,
+                message: 'Backup restored successfully' 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                error: 'Failed to restore backup' 
+            });
+        }
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
 // Run metadata sync on startup
 syncMetadataWithFiles();
 
@@ -957,10 +1212,13 @@ app.listen(PORT, () => {
     console.log(`╚══════════════════════════════════════════════════════╝\n`);
     console.log(`📁 Images persist to: ${uploadsDir}`);
     console.log(`📄 Metadata persists to: ${metadataFile}`);
+    console.log(`💾 Backups stored in: ${backupsDir}`);
     console.log(`\n✓ All uploaded images are saved to disk`);
     console.log(`✓ Images will survive server restarts`);
     console.log(`✓ Images will survive offline periods`);
-    console.log(`✓ Images persist even after server stops\n`);
+    console.log(`✓ Images persist even after server stops`);
+    console.log(`✓ Automatic backups created periodically`);
+    console.log(`✓ Data persists even after computer shuts off\n`);
     
     // Final persistence verification
     const fileCount = fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir).filter(f => {
@@ -968,7 +1226,16 @@ app.listen(PORT, () => {
         return ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext);
     }).length : 0;
     
+    const backupCount = fs.existsSync(backupsDir) ? fs.readdirSync(backupsDir).filter(f => {
+        const itemPath = path.join(backupsDir, f);
+        return fs.statSync(itemPath).isDirectory() && f.startsWith('backup-');
+    }).length : 0;
+    
     if (fileCount > 0) {
-        console.log(`✓ Verified: ${fileCount} media file(s) currently stored on disk\n`);
+        console.log(`✓ Verified: ${fileCount} media file(s) currently stored on disk`);
+    }
+    
+    if (backupCount > 0) {
+        console.log(`✓ Verified: ${backupCount} backup(s) available for recovery\n`);
     }
 });

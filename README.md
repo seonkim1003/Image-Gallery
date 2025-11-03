@@ -154,14 +154,56 @@ The project includes configuration files for easy deployment:
 - **24/7 ready** - Configured for continuous operation on all major platforms
 - **Health monitoring** - `/api/health` endpoint for platform monitoring
 
-## ⚠️ Important: Image Persistence
+## 💾 Data Persistence & Backups
 
-- Images are stored on the server's file system
-- On **ephemeral filesystems** (some container platforms), files may be lost on redeploy
-- **For production**, consider:
-  - Using platforms with persistent volumes (Railway, Fly.io paid tiers)
-  - Cloud storage (AWS S3, Cloudinary) for images
-  - Regular backups of the `uploads/` folder
+### Automatic Persistence Features
+
+Your website includes multiple layers of data protection:
+
+1. **Disk Storage** - All images and metadata saved to disk
+2. **Automatic Backups** - Backups created every 10 uploads
+3. **Metadata Redundancy** - Metadata saved to both primary and backup locations
+4. **Auto-Restore** - If data is lost, automatically restores from most recent backup on startup
+
+### Backup API Endpoints
+
+- `POST /api/backup` - Create a manual backup
+- `GET /api/backups` - List all available backups
+- `POST /api/restore/:backupName` - Restore from a specific backup
+
+### ⚠️ Important: Persistent Storage on Hosting Platforms
+
+**Railway** (Recommended):
+- ✅ Persistent storage enabled by default
+- ✅ Data persists across deployments
+- ✅ No configuration needed - just works!
+
+**Fly.io**:
+- ✅ Persistent volumes available (free tier)
+- Add volume: `flyctl volumes create data --size 1`
+- Mount volume in `fly.toml`:
+```toml
+[mounts]
+  source = "data"
+  destination = "/app/uploads"
+```
+
+**Render**:
+- ⚠️ Ephemeral storage on free tier (data lost on redeploy)
+- ✅ Upgrade to paid plan for persistent storage
+- Or use external storage (S3, etc.)
+
+**Self-Hosted/VPS**:
+- ✅ Full persistence (files stay on disk)
+- ✅ Automatic backups in `backups/` directory
+- ✅ Data survives reboots and server restarts
+
+### Ensuring Data Persists After Shutdown
+
+1. **On Railway/Fly.io**: Data persists automatically (persistent volumes)
+2. **On Render Free Tier**: Use backups feature - download backups periodically
+3. **Self-Hosted**: Everything persists to disk automatically
+4. **Any Platform**: Use `/api/backup` endpoint to create backups before deployments
 
 ## Troubleshooting
 

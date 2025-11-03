@@ -50,3 +50,13 @@ primary_region = "iad"
   PORT = "3000"
   NODE_ENV = "production"
 
+# Persistent volume configuration for data persistence
+# To enable persistent storage:
+# 1. Create volume: flyctl volumes create data --size 1
+# 2. Uncomment the mounts section below
+# 3. Redeploy: flyctl deploy
+
+# [mounts]
+#   source = "data"
+#   destination = "/app/uploads"
+
