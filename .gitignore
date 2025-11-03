@@ -4,3 +4,5 @@ uploads/
 .DS_Store
 *.log
 image-metadata.json
+logs/
+.pm2/

@@ -31,45 +31,83 @@ The server will run on `http://localhost:3000`
 
 Navigate to `http://localhost:3000` in your web browser.
 
-## Deploy for Free (So Others Can See Images)
+## 🚀 Deploy for 24/7 Operation
 
-You can deploy this for free on several platforms. Here are the easiest options:
+Your website is configured to run 24/7 with all features. Choose a hosting option below:
 
-### Option 1: Render (Recommended - Easiest)
+### Option 1: Fly.io (Recommended for 24/7 - FREE) ⭐
 
-1. Create a free account at [render.com](https://render.com)
+**Best for 24/7 operation on free tier!**
+
+1. Install Fly CLI: `curl -L https://fly.io/install.sh | sh`
+2. Sign up at [fly.io](https://fly.io) (free account)
+3. Run: `flyctl launch` (in your project directory)
+4. Follow prompts - it will auto-detect your app
+5. Deploy: `flyctl deploy`
+6. Your app runs 24/7 for free!
+
+**Features:**
+- ✅ Stays online 24/7 (free tier)
+- ✅ Persistent storage for images
+- ✅ Auto-scaling
+- ✅ Health checks configured
+
+**Note:** Free tier includes 3 shared-cpu-1x VMs (256MB RAM each)
+
+### Option 2: Railway (24/7 - Free Tier Available)
+
+**Great free tier with $5 monthly credit**
+
+1. Sign up at [railway.app](https://railway.app)
+2. Click "New Project" → "Deploy from GitHub repo"
+3. Select your repository
+4. Railway auto-detects Node.js and deploys
+5. Your app runs continuously!
+
+**Features:**
+- ✅ $5 free monthly credit (usually enough for 24/7)
+- ✅ Persistent storage included
+- ✅ Auto-deploy from Git
+- ✅ Configuration file included (`railway.json`)
+
+### Option 3: Render (Free Tier Sleeps)
+
+1. Sign up at [render.com](https://render.com)
 2. Click "New +" → "Web Service"
-3. Connect your GitHub repository (or deploy manually)
+3. Connect your GitHub repository
 4. Configure:
    - **Build Command**: `npm install`
    - **Start Command**: `npm start`
    - **Environment**: Node
 5. Click "Create Web Service"
-6. Your app will be live! Share the URL with anyone.
 
-**Note**: On Render's free tier, the server sleeps after inactivity, but wakes up when accessed.
+**Note:** Free tier sleeps after 15 min inactivity. Upgrade to paid ($7/month) for 24/7 operation.
 
-### Option 2: Railway
+### Option 4: Self-Host with PM2 (Your Own Server)
 
-1. Create a free account at [railway.app](https://railway.app)
-2. Click "New Project" → "Deploy from GitHub repo"
-3. Select your repository
-4. Railway will auto-detect Node.js and deploy
-5. Your app will be live instantly!
+**For running on your own VPS/server 24/7:**
 
-### Option 3: Vercel
+1. Install PM2 globally: `npm install -g pm2`
+2. Start the app: `npm run pm2:start`
+3. App will auto-restart if it crashes
+4. View logs: `pm2 logs image-gallery`
+5. Monitor: `pm2 monit`
 
-1. Install Vercel CLI: `npm i -g vercel`
-2. Run `vercel` in your project directory
-3. Follow the prompts to deploy
+**PM2 Commands:**
+```bash
+npm run pm2:start    # Start the app
+npm run pm2:stop     # Stop the app
+npm run pm2:restart  # Restart the app
+pm2 logs             # View logs
+pm2 status           # Check status
+```
 
-### Option 4: Replit
-
-1. Go to [replit.com](https://replit.com)
-2. Create a new Node.js repl
-3. Upload your files
-4. Click "Run"
-5. Share the public URL
+**Features:**
+- ✅ 24/7 operation
+- ✅ Auto-restart on crash
+- ✅ Memory limits configured
+- ✅ Log rotation
+- ✅ Process management
 
 ## Important Files
 
@@ -98,11 +136,32 @@ PORT=8080 npm start
 3. **Sharing**: Since images are on the server, anyone with the website URL can see them
 4. **Delete**: Clicking × removes the image from the server
 
-## Notes
+## 📦 Files for 24/7 Deployment
+
+The project includes configuration files for easy deployment:
+
+- `fly.toml` - Fly.io configuration (24/7 on free tier)
+- `railway.json` - Railway configuration
+- `render.yaml` - Render.com configuration
+- `Procfile` - Heroku/Render start command
+- `ecosystem.config.js` - PM2 configuration for self-hosting
+
+## 📝 Notes
+
+- **Images persist to disk** - All uploads are saved to the `uploads/` directory
+- **Metadata persists** - Image categories and info saved to `image-metadata.json`
+- **Survives restarts** - Images remain even after server restarts
+- **24/7 ready** - Configured for continuous operation on all major platforms
+- **Health monitoring** - `/api/health` endpoint for platform monitoring
+
+## ⚠️ Important: Image Persistence
 
 - Images are stored on the server's file system
-- On free hosting platforms, files may be cleared if the server is inactive
-- For production use, consider using cloud storage (AWS S3, Cloudinary, etc.)
+- On **ephemeral filesystems** (some container platforms), files may be lost on redeploy
+- **For production**, consider:
+  - Using platforms with persistent volumes (Railway, Fly.io paid tiers)
+  - Cloud storage (AWS S3, Cloudinary) for images
+  - Regular backups of the `uploads/` folder
 
 ## Troubleshooting
 

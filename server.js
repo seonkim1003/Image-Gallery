@@ -911,9 +911,41 @@ app.post('/api/upload-link', (req, res) => {
     }
 });
 
-// Health check
+// Enhanced health check for hosting platforms (24/7 monitoring)
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok' });
+    try {
+        // Verify critical directories exist
+        const uploadsExists = fs.existsSync(uploadsDir);
+        const metadataExists = fs.existsSync(metadataFile);
+        
+        const health = {
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            memory: {
+                used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+                total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
+            },
+            disk: {
+                uploadsDirectory: uploadsExists,
+                metadataFile: metadataExists
+            }
+        };
+        
+        // If critical components missing, still return 200 but mark as degraded
+        if (!uploadsExists) {
+            health.status = 'degraded';
+            health.message = 'Uploads directory missing';
+        }
+        
+        res.json(health);
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
 });
 
 // Run metadata sync on startup

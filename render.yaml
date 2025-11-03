@@ -1,0 +1,18 @@
+# Render.com configuration
+# This service will stay awake on paid plans, but may sleep on free tier
+
+services:
+  - type: web
+    name: image-gallery
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+    healthCheckPath: /api/health
+    # Note: Free tier may spin down after inactivity
+    # Upgrade to paid plan for 24/7 operation
+
