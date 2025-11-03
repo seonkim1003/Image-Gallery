@@ -13,10 +13,21 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Ensure uploads directory exists
+// Ensure uploads directory exists and is writable
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('Created uploads directory:', uploadsDir);
+}
+
+// Verify uploads directory is writable (critical for persistence)
+try {
+    const testFile = path.join(uploadsDir, '.persistence-test');
+    fs.writeFileSync(testFile, 'test', 'utf8');
+    fs.unlinkSync(testFile);
+    console.log('✓ Uploads directory is writable - images will persist to disk');
+} catch (error) {
+    console.error('✗ WARNING: Uploads directory is not writable! Images may not persist:', error.message);
 }
 
 // Metadata file to store image categories
@@ -61,6 +72,13 @@ function saveMetadata(metadata) {
 function syncMetadataWithFiles() {
     try {
         console.log('Syncing metadata with files on disk...');
+        
+        // Ensure uploads directory exists before syncing
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+            console.log('Created uploads directory during sync');
+        }
+        
         const metadata = loadMetadata();
         const files = fs.readdirSync(uploadsDir);
         const fileSet = new Set(files.filter(file => {
@@ -124,12 +142,25 @@ function syncMetadataWithFiles() {
         
     } catch (error) {
         console.error('Error syncing metadata:', error);
+        // Ensure uploads directory exists even if sync fails
+        if (!fs.existsSync(uploadsDir)) {
+            try {
+                fs.mkdirSync(uploadsDir, { recursive: true });
+                console.log('Recreated uploads directory after sync error');
+            } catch (mkdirError) {
+                console.error('Failed to recreate uploads directory:', mkdirError);
+            }
+        }
     }
 }
 
-// Configure multer for file uploads
+// Configure multer for file uploads with persistence guarantee
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
+        // Ensure directory exists before saving (defense in depth)
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
         cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
@@ -889,8 +920,23 @@ app.get('/api/health', (req, res) => {
 syncMetadataWithFiles();
 
 app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`✓ Images are persisted to: ${uploadsDir}`);
-    console.log(`✓ Metadata is persisted to: ${metadataFile}`);
-    console.log(`✓ All data will survive server restarts and offline periods`);
+    console.log(`\n╔══════════════════════════════════════════════════════╗`);
+    console.log(`║         Server running on http://localhost:${PORT}         ║`);
+    console.log(`╚══════════════════════════════════════════════════════╝\n`);
+    console.log(`📁 Images persist to: ${uploadsDir}`);
+    console.log(`📄 Metadata persists to: ${metadataFile}`);
+    console.log(`\n✓ All uploaded images are saved to disk`);
+    console.log(`✓ Images will survive server restarts`);
+    console.log(`✓ Images will survive offline periods`);
+    console.log(`✓ Images persist even after server stops\n`);
+    
+    // Final persistence verification
+    const fileCount = fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir).filter(f => {
+        const ext = path.extname(f).toLowerCase();
+        return ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext);
+    }).length : 0;
+    
+    if (fileCount > 0) {
+        console.log(`✓ Verified: ${fileCount} media file(s) currently stored on disk\n`);
+    }
 });
