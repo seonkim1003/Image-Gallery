@@ -1,0 +1,16 @@
+# Cloudflare Headers Configuration
+# This file configures headers when using Cloudflare Pages
+
+/*
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  
+# Upload endpoints need larger body size limits
+/api/upload
+  X-Requested-With: XMLHttpRequest
+
+/api/upload-link
+  X-Requested-With: XMLHttpRequest
+

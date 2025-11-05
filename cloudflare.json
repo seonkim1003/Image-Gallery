@@ -1,0 +1,20 @@
+{
+  "build": {
+    "command": "npm install",
+    "cwd": ".",
+    "watch": []
+  },
+  "routes": {
+    "/api/*": {
+      "origin": "https://your-backend-url.com"
+    }
+  },
+  "headers": {
+    "/*": {
+      "X-Frame-Options": "SAMEORIGIN",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin"
+    }
+  }
+}
+

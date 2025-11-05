@@ -8,9 +8,40 @@ const archiver = require('archiver');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS for all origins
-app.use(cors());
+// Trust proxy - Required for Cloudflare CDN/proxy
+// This allows Express to trust the X-Forwarded-* headers from Cloudflare
+app.set('trust proxy', true);
+
+// Enable CORS for all origins (including Cloudflare)
+app.use(cors({
+    origin: true, // Allow all origins (Cloudflare will pass through)
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+// Parse JSON bodies
 app.use(express.json());
+
+// Cloudflare-specific middleware
+// Get real client IP from Cloudflare headers
+app.use((req, res, next) => {
+    // Cloudflare passes the real client IP in CF-Connecting-IP header
+    const cloudflareIP = req.headers['cf-connecting-ip'];
+    const realIP = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+    
+    // Store real IP for logging/analytics
+    req.realIP = cloudflareIP || realIP;
+    
+    // Set Cloudflare-specific response headers
+    if (req.headers['cf-ray']) {
+        res.setHeader('CF-Ray', req.headers['cf-ray']);
+    }
+    
+    next();
+});
+
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Support persistent storage paths via environment variables

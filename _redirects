@@ -1,0 +1,7 @@
+# Cloudflare Pages Redirects
+# All API routes should be handled by the backend server
+# Frontend routes should serve index.html
+
+/api/*  https://your-backend-url.com/api/:splat  200
+/*      /index.html                               200
+
