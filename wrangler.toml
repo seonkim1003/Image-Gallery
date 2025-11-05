@@ -1,0 +1,21 @@
+# Cloudflare Configuration
+# IMPORTANT: This Express.js app CANNOT run on Cloudflare Workers
+# 
+# This file is created to prevent build errors, but you should:
+# 1. Deploy to Railway/Fly.io instead (RECOMMENDED)
+# 2. OR use Cloudflare Pages for frontend only (see DEPLOYMENT.md)
+#
+# To fix the build error, change your deploy command from:
+#   npx wrangler deploy
+# To:
+#   npm start  (for Railway/Fly.io/Render)
+# OR
+#   npx wrangler pages deploy ./public  (for Cloudflare Pages frontend only)
+
+name = "image-gallery-website"
+compatibility_date = "2025-11-05"
+main = "server.js"
+
+# This is a placeholder - Express.js apps don't work on Workers
+# Deploy to Railway/Fly.io/Render instead, then use Cloudflare as CDN/proxy
+
