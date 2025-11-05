@@ -13,15 +13,20 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Support persistent storage paths via environment variables
+// Use these to store data on persistent volumes (Railway, Fly.io, etc.)
+const PERSISTENT_DATA_DIR = process.env.PERSISTENT_DATA_DIR || __dirname;
+const uploadsDir = path.join(PERSISTENT_DATA_DIR, 'uploads');
+const backupsDir = path.join(PERSISTENT_DATA_DIR, 'backups');
+const metadataFile = path.join(PERSISTENT_DATA_DIR, 'image-metadata.json');
+
 // Ensure uploads directory exists and is writable
-const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
     console.log('Created uploads directory:', uploadsDir);
 }
 
 // Backup directory for data persistence across deployments
-const backupsDir = path.join(__dirname, 'backups');
 if (!fs.existsSync(backupsDir)) {
     fs.mkdirSync(backupsDir, { recursive: true });
     console.log('Created backups directory:', backupsDir);
@@ -39,23 +44,48 @@ try {
     console.error('✗ WARNING: Uploads directory is not writable! Images may not persist:', error.message);
 }
 
-// Metadata file to store image categories
-const metadataFile = path.join(__dirname, 'image-metadata.json');
-
 // Backup file path
 const backupMetadataFile = path.join(backupsDir, 'image-metadata.json');
 
-// Load metadata from file
-function loadMetadata() {
+// Also check for backup metadata in case primary is lost
+function loadMetadataWithFallback() {
+    // Try primary location first
     try {
         if (fs.existsSync(metadataFile)) {
             const data = fs.readFileSync(metadataFile, 'utf8');
             return JSON.parse(data);
         }
     } catch (error) {
-        console.error('Error loading metadata:', error);
+        console.warn('Could not load primary metadata, trying backup:', error.message);
     }
+    
+    // Fallback to backup location
+    try {
+        if (fs.existsSync(backupMetadataFile)) {
+            console.log('⚠️  Loading metadata from backup location');
+            const data = fs.readFileSync(backupMetadataFile, 'utf8');
+            const metadata = JSON.parse(data);
+            // Restore to primary location
+            try {
+                const tempFile = metadataFile + '.tmp';
+                fs.writeFileSync(tempFile, data, 'utf8');
+                fs.renameSync(tempFile, metadataFile);
+                console.log('✓ Restored metadata to primary location');
+            } catch (restoreError) {
+                console.warn('Could not restore metadata to primary location:', restoreError.message);
+            }
+            return metadata;
+        }
+    } catch (error) {
+        console.warn('Could not load backup metadata:', error.message);
+    }
+    
     return {};
+}
+
+// Load metadata from file (with fallback to backup)
+function loadMetadata() {
+    return loadMetadataWithFallback();
 }
 
 // Save metadata to file (atomic write for data safety)
@@ -204,24 +234,43 @@ function syncMetadataWithFiles() {
         if (!fs.existsSync(uploadsDir)) {
             fs.mkdirSync(uploadsDir, { recursive: true });
             console.log('Created uploads directory during sync');
+        }
+        
+        // Check if uploads directory is empty (ephemeral storage issue)
+        const files = fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir).filter(f => {
+            const ext = path.extname(f).toLowerCase();
+            return ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext);
+        }) : [];
+        
+        const isEmpty = files.length === 0;
+        const metadataExists = fs.existsSync(metadataFile) || fs.existsSync(backupMetadataFile);
+        
+        // If directory is empty but we have metadata or backups, restore
+        if (isEmpty && fs.existsSync(backupsDir)) {
+            const backups = fs.readdirSync(backupsDir)
+                .filter(item => {
+                    const itemPath = path.join(backupsDir, item);
+                    return fs.statSync(itemPath).isDirectory() && item.startsWith('backup-');
+                })
+                .sort()
+                .reverse();
             
-            // Try to restore from most recent backup if uploads directory is empty/missing
-            if (fs.existsSync(backupsDir)) {
-                const backups = fs.readdirSync(backupsDir)
-                    .filter(item => {
-                        const itemPath = path.join(backupsDir, item);
-                        return fs.statSync(itemPath).isDirectory() && item.startsWith('backup-');
-                    })
-                    .sort()
-                    .reverse();
-                
-                if (backups.length > 0) {
-                    console.log(`⚠️  Uploads directory missing - attempting to restore from backup: ${backups[0]}`);
-                    const restored = restoreFromBackup(backups[0]);
-                    if (restored) {
-                        console.log('✓ Successfully restored from backup');
-                    }
+            if (backups.length > 0) {
+                console.log(`⚠️  Uploads directory is empty - attempting to restore from backup: ${backups[0]}`);
+                const restored = restoreFromBackup(backups[0]);
+                if (restored) {
+                    console.log('✓ Successfully restored from backup');
+                    // Reload files after restore
+                    const restoredFiles = fs.readdirSync(uploadsDir).filter(f => {
+                        const ext = path.extname(f).toLowerCase();
+                        return ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext);
+                    });
+                    console.log(`✓ Restored ${restoredFiles.length} files from backup`);
+                } else {
+                    console.warn('⚠️  Could not restore from backup - data may be lost');
                 }
+            } else if (metadataExists) {
+                console.warn('⚠️  Images missing but metadata exists - data may have been lost');
             }
         }
         
@@ -230,10 +279,12 @@ function syncMetadataWithFiles() {
         if (!persistenceCheck.writable) {
             console.warn('⚠️  WARNING: Storage may be ephemeral - data may not persist across deployments!');
             console.warn('   Consider using persistent volumes on your hosting platform.');
+            console.warn('   Set PERSISTENT_DATA_DIR environment variable to use persistent storage.');
         } else {
             console.log('✓ Storage persistence verified');
         }
         
+        // Load metadata (will try backup if primary is missing)
         const metadata = loadMetadata();
         const files = fs.readdirSync(uploadsDir);
         const fileSet = new Set(files.filter(file => {
@@ -575,8 +626,10 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
     saveMetadata(metadata);
     
     // Create backup after upload (periodic backup)
-    // Only backup every 10th upload to avoid too many backups
-    if (Object.keys(metadata).length % 10 === 0) {
+    // Backup more frequently to prevent data loss
+    // Backup every 5th upload for better protection
+    if (Object.keys(metadata).length % 5 === 0) {
+        console.log('Creating automatic backup...');
         createBackup();
     }
     
@@ -1210,6 +1263,12 @@ app.listen(PORT, () => {
     console.log(`\n╔══════════════════════════════════════════════════════╗`);
     console.log(`║         Server running on http://localhost:${PORT}         ║`);
     console.log(`╚══════════════════════════════════════════════════════╝\n`);
+    console.log(`📂 Data Directory: ${PERSISTENT_DATA_DIR}`);
+    if (PERSISTENT_DATA_DIR !== __dirname) {
+        console.log(`   (Using persistent storage path)`);
+    } else {
+        console.log(`   ⚠️  Using app directory - consider setting PERSISTENT_DATA_DIR for persistent storage`);
+    }
     console.log(`📁 Images persist to: ${uploadsDir}`);
     console.log(`📄 Metadata persists to: ${metadataFile}`);
     console.log(`💾 Backups stored in: ${backupsDir}`);

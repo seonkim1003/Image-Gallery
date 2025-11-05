@@ -118,11 +118,22 @@ pm2 status           # Check status
 
 ## Environment Variables
 
-The server uses `PORT` environment variable (defaults to 3000):
+The server uses these environment variables:
 
+- `PORT` - Server port (defaults to 3000)
+- `PERSISTENT_DATA_DIR` - Path to persistent storage directory (defaults to app directory)
+
+**Example:**
 ```bash
-PORT=8080 npm start
+PORT=8080 PERSISTENT_DATA_DIR=/data npm start
 ```
+
+**For persistent storage on hosting platforms:**
+
+- **Railway**: No configuration needed - persistent by default
+- **Fly.io**: Set `PERSISTENT_DATA_DIR=/data` and mount volume to `/data`
+- **Render**: Set `PERSISTENT_DATA_DIR=/data` (requires paid plan)
+- **Self-hosted**: Set to a persistent directory like `/var/www/uploads`
 
 ## File Size Limits
 
